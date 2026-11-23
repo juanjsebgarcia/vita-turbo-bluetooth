@@ -1,6 +1,6 @@
 /*
  * test_lowbatt.c - host test of the Home screen module's pure parts: when a low battery is announced (user/lowbatt.c) and the
- * notification block (user/notice.c), both compiled into this file as they are.
+ * notification block (user/notice.c) and when the codec notice is asked for (user/lowbatt.c), both compiled into this file as they are.
  *
  *   make test      (cc test/test_lowbatt.c, then run)
  *
@@ -10,6 +10,7 @@
  *   - a threshold is armed again when the level rises above it (charging); a link that is down arms them all (a new connection);
  *   - nothing is announced while the level is unknown or the headset is not connected, or while the switch is off, and the
  *     thresholds passed while it was off are not announced when it is turned on;
+ *   - the codec notice is asked for on every 2 s poll while headphones are connected, and only on the 30 s battery tick otherwise;
  *   - the block: zeroed to 0x470 bytes, the text as UTF-16 with the number in place of {n}, a launch word that is empty, the two last
  *     words zero; text over 63 units, empty, bad UTF-8 and control characters are refused (and leave the block zeroed); every
  *     language's text of the table builds for every level 0..100.
@@ -91,6 +92,18 @@ static void units(const uint8_t *b, uint16_t *u, int n)
 		u[i] = (uint16_t)(b[2 * i] | (b[2 * i + 1] << 8));
 }
 
+static void test_notice_due(void)
+{
+	unsigned n = 0;
+
+	for (unsigned t = 0; t < 45; t++)
+		n += lowbatt_notice_due(t, 15, 0) ? 1u : 0u;
+	CHECK(n == 3 && lowbatt_notice_due(0, 15, 0) && lowbatt_notice_due(15, 15, 0) && lowbatt_notice_due(30, 15, 0) && !lowbatt_notice_due(1, 15, 0) && !lowbatt_notice_due(14, 15, 0),
+	      "with no headphones connected the codec notice is asked for on the battery's tick only (every 30 s), got %u in 45 polls", n);
+	for (unsigned t = 0; t < 45; t++)
+		CHECK(lowbatt_notice_due(t, 15, 1), "while connected it is asked for on every poll (tick %u)", t);
+}
+
 static void test_block(void)
 {
 	static uint8_t blk[NOTICE_BLOCK_SIZE];
@@ -152,6 +165,7 @@ int main(void)
 	test_thresholds();
 	test_rearm();
 	test_nothing();
+	test_notice_due();
 	test_block();
 	test_table();
 	printf("test_lowbatt: ok\n");

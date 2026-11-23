@@ -126,6 +126,8 @@ static int fake_sender(int ctx, unsigned op, const char *fmt, ...)
 	return 0;
 }
 
+uint32_t ksceKernelGetSystemTimeLow(void) { return 123456u; }
+#include "../kernel/btevlog_hook.c"
 #include "../kernel/btflush_hook.c"
 #include "../kernel/btflush.c"
 
@@ -158,11 +160,13 @@ static void reset(void)
 	g_have_module = g_offset_ok = 1;
 	g_lookups = g_orig_calls = 0;
 	/* the module's own state, as at module load */
-	g_flush_dead = 0; g_flush_uid[0] = g_flush_uid[1] = g_flush_uid[2] = -1;
+	g_flush_dead = 0; g_evt_dead = 0; g_flush_uid[0] = g_flush_uid[1] = g_flush_uid[2] = -1;
 	btflush_slots = btflush_armed = btflush_guard = 0;
 	btflush_in_start = btflush_in_stop = btflush_in_evt = 0;
 	btflush_start_ref = btflush_stop_ref = btflush_evt_ref = 0;
 	btflush_sender = 0;
+	memset(&btevlog_ring, 0, sizeof(btevlog_ring));
+	btevlog_on = 0;
 }
 
 static void on(void)
@@ -403,6 +407,73 @@ static void expect_untouched(const uint8_t *ev, int len, uint32_t *ctx, const ch
 	      "%s: %d calls, not the event as it came", what, g_evt.n);
 }
 
+static void test_evt_alone(void)
+{
+	uint32_t ctx[4];
+	uint8_t disc[6] = { 0x05, 4, 0, 0x2A, 0, 0x13 };
+	int conn[0x40];
+
+	/* not wanted: nothing is looked at */
+	reset();
+	CHECK(btt_btflush_evt_sync(0) == 0 && g_lookups == 0 && g_tai.calls == 0, "the log not wanted: nothing looked at or hooked");
+	/* wanted: only the event handler is hooked, once, as Thumb code; it passes events on and tells the log (when the log is on) */
+	CHECK(btt_btflush_evt_sync(1) == 1 && g_tai.calls == 1 && g_tai.off[0] == 0xC848 && g_tai.thumb[0] == 1, "the event hook alone goes in at the event handler");
+	CHECK(btt_btflush_evt_sync(1) == 1 && btt_btflush_evt_sync(0) == 1 && g_tai.calls == 1, "it is not hooked again, and stays in when not wanted");
+	btflush_evt_hook(ctx, disc, 6);
+	CHECK(g_evt.n == 1 && g_evt.len[0] == 6 && !memcmp(g_evt.bytes[0], disc, 6) && g_evt.ptr[0] == disc, "the event goes on untouched");
+	CHECK(btevlog_ring.head == 0, "log off: nothing noted");
+	btevlog_on = 1;
+	btflush_evt_hook(ctx, disc, 6);
+	CHECK(g_evt.n == 2 && btevlog_ring.head == 1 && btevlog_ring.e[0].kind == BTEL_K_DISC, "log on: the event goes on and one record is stored");
+	/* Lowest wanted afterwards: the start and stop hooks go in, the event hook is not hooked twice and its site (now taiHEN's jump) is not looked at again */
+	memset(g_text_mem + OFF_EVT, 0xEE, 12);
+	memset(g_text_mem + OFF_EVT_TAIL, 0xEE, 14);
+	on();
+	CHECK(g_tai.calls == 3 && g_tai.off[1] == 0x6F50 && g_tai.off[2] == 0x71C8, "Lowest adds the two stream hooks only (%d calls)", g_tai.calls);
+	CHECK(g_flush_uid[0] >= 0 && g_flush_uid[1] >= 0 && g_flush_uid[2] >= 0 && btflush_guard == 1, "all three in, the guard on");
+	CHECK(btflush_evt_ref != 0, "the event hook's reference was not cleared by the second install");
+	btt_btflush_restore();
+	CHECK(g_tai.releases == 3, "module stop releases all three");
+
+	/* Lowest first, the log after: nothing more to hook */
+	reset();
+	on();
+	CHECK(g_tai.calls == 3, "Lowest alone: three hooks");
+	CHECK(btt_btflush_evt_sync(1) == 1 && g_tai.calls == 3, "the log finds the event hook there");
+	btt_btflush_restore();
+
+	/* the event handler's bytes differ: refused, said once, not tried again; the stream sites are not consulted for the log */
+	reset();
+	g_text_mem[OFF_EVT_TAIL + 5] ^= 1;
+	g_text_mem[OFF_START] ^= 1;
+	for (int i = 0; i < 4; i++)
+		CHECK(btt_btflush_evt_sync(1) == 0, "refused");
+	CHECK(g_tai.calls == 0 && g_lookups == 1, "refused once, then not looked at again (%d lookups)", g_lookups);
+
+	/* the code cannot be read yet: asked again later, hooked when it can */
+	reset();
+	g_have_module = 0;
+	CHECK(btt_btflush_evt_sync(1) == 0 && btt_btflush_evt_sync(1) == 0 && g_tai.calls == 0, "not readable: no hook");
+	g_have_module = 1;
+	CHECK(btt_btflush_evt_sync(1) == 1 && g_tai.calls == 1, "readable later: hooked");
+
+	/* the hook is refused: no log, not retried; Lowest still works on its own (its three, the event hook among them, are separate) */
+	reset();
+	g_tai.fail_nth = 1;
+	CHECK(btt_btflush_evt_sync(1) == 0 && btt_btflush_evt_sync(1) == 0 && g_tai.calls == 1, "a refused hook is not retried");
+
+	/* the stream sites differ while the log's hook is in: Lowest is refused, the log's hook stays and nothing is set */
+	reset();
+	CHECK(btt_btflush_evt_sync(1) == 1, "log hook in");
+	g_text_mem[OFF_STOP] ^= 1;
+	btt_btflush_sync(1);
+	CHECK(g_tai.calls == 1 && btflush_slots == 0 && btflush_guard == 0 && g_flush_uid[2] >= 0, "Lowest refused, the log's hook untouched, no timeout, no guard");
+	conn_init(conn, 7, 3);
+	btt_btflush_restore();
+	CHECK(g_tai.releases == 1, "module stop releases the one hook");
+	puts("  ok: the event hook alone, for the link log");
+}
+
 static void test_guard(void)
 {
 	uint32_t ctx[4];
@@ -530,6 +601,7 @@ int main(int argc, char **argv)
 {
 	static const struct { const char *name; void (*fn)(void); } tests[] = {
 		{ "nothing is looked at until Lowest is wanted", test_not_wanted },
+		{ "the event hook alone, for the link log", test_evt_alone },
 		{ "refuses on other bytes, a missing module or address", test_refusals },
 		{ "the hooks and the commands they send", test_hooks_and_commands },
 		{ "switched off, stop, and no reference", test_switched_off },

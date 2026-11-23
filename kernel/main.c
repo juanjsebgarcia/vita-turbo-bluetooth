@@ -13,6 +13,9 @@
  *     headphones disconnect (btdisc.c), the reconnecting of headphones after standby (btreconn.c),
  *     the Bluetooth name (btname.c) and the reading of the headset's battery (bthfp_mod.c: on while Bluetooth
  *     Turbo is on and Read Headset Battery is on). Each is taken out again when switched off and at module stop;
+ *   - looks for the optional AAC module (bluetoothturbo_aac.skprx) and, from the early gate, asks it for its self-test (the aptX and LDAC add-ons' too, one at a time: selftest_pass); without it nothing of AAC
+ *     exists (btaac_link.c); bttGet(BTT_KEY_AAC_AVAIL) says what the Settings page may offer; with it, and the Bluetooth Codec key at AAC, the
+ *     next headphones that offer AAC are sent AAC (btaac_stream.c); bttGetLinkInfo says what the audio link is now (btlink.c);
  *   - a boot guard: ur0:data/bluetoothturbo/boot_guard holds '1' from start-up until SceShell
  *     has been up for BTT_GUARD_SHELL_SECS (or the module has run for BTT_GUARD_SECS), then '0'.
  *     Finding '1' at start means the last start never got that far, so this start stands
@@ -47,11 +50,21 @@
 #include "btreconn.h"
 #include "bthq.h"
 #include "btflush.h"
+#include "btevlog.h"
 #include "bthfp_mod.h"
 #include "btbatt.h"
+#include "btaac_link.h"
+#include "btaptx_link.h"
+#include "btldac_link.h"
+#include "btaac_stream.h"
+#include "btlink.h"
+#include "btfall.h"
+#include "btcdcfile.h"
+#include "btapply.h"
 #include "klog.h"
 
 #define BTT_CHECK_MS        500
+#define BTT_FAST_MS         100   /* the worker's period while an AAC stream is configured (btaac_stream.h) */
 #define BTT_SAVE_DELAY_MS   1000
 
 #define BTT_GUARD_PATH        BTT_DIR "/boot_guard"
@@ -69,6 +82,12 @@
  * early writes at 9.0 s, on every boot, without trouble; 12 s is a few seconds after that. The boot guard
  * still has to be clear (the Home screen up) as well. */
 #define BTT_EARLY_UPTIME    12
+
+/* The add-ons' start-up self-tests (AAC, aptX, LDAC) are not Bluetooth changes: each runs its own encoder on its own data, with its own crash record, and
+ * touches no Bluetooth code and no shared hardware (their imports are the thread, file and memory managers and the C library only, see CMakeLists.txt).
+ * They start from the early gate, one at a time, so that a headset that reconnects at power-on finds the codecs ready as soon as the hooks go in. One that
+ * has not given its verdict in this many seconds is left to finish, and the next is started. */
+#define BTT_SELFTEST_WAIT   10
 
 #define EV_WAKE   0x1
 #define EV_STOP   0x2
@@ -104,6 +123,12 @@ static const int g_defaults[BTT_KEY_COUNT] = {
 	[BTT_KEY_HFP]     = BTT_HFP_MODE_ON,
 	[BTT_KEY_LOWBATT] = 1,
 	[BTT_KEY_READBATT] = 1,
+	[BTT_KEY_CODEC]   = BTT_CODEC_SBC,
+	[BTT_KEY_AAC_ACCEL] = 1,
+	[BTT_KEY_AAC_BITRATE] = BTT_AACBR_256,
+	[BTT_KEY_LDAC_RATE] = BTT_LDACBR_330,
+	[BTT_KEY_APTX_HD] = 1,
+	[BTT_KEY_SOURCE_ONLY] = 1,
 };
 
 static const int g_max[BTT_KEY_COUNT] = {
@@ -116,11 +141,18 @@ static const int g_max[BTT_KEY_COUNT] = {
 	[BTT_KEY_CTRL] = BTT_CTRL_COUNT - 1, [BTT_KEY_QUALITY] = BTT_Q_COUNT - 1,
 	[BTT_KEY_DISCONNECT] = BTT_DISC_COUNT - 1, [BTT_KEY_RECONNECT] = 1,
 	[BTT_KEY_HFP] = BTT_HFP_MODE_MAX, [BTT_KEY_LOWBATT] = 1, [BTT_KEY_READBATT] = 1,
+	[BTT_KEY_CODEC] = BTT_CODEC_COUNT - 1, [BTT_KEY_AAC_ACCEL] = 1,
+	[BTT_KEY_AAC_BITRATE] = BTT_AACBR_COUNT - 1,
+	[BTT_KEY_LDAC_RATE] = BTT_LDACBR_COUNT - 1,
+	[BTT_KEY_APTX_HD] = 1,
+	[BTT_KEY_SOURCE_ONLY] = 1,
 };
 
 static int    g_set[BTT_KEY_COUNT];
 static char   g_name[BTT_NAME_MAX + 1];     /* the Bluetooth name set ("" = the console's own); the worker copies it */
 static volatile int g_dirty;
+static volatile unsigned g_refresh_early, g_refresh_busy;   /* Refresh Codecs presses refused in the start-up period / while a request was in hand: the worker logs them */
+static volatile int g_startup_over;      /* the worker's passes have reached BTT_MIN_UPTIME: changes may go in (bttSet's Refresh Codecs waits for it) */
 static volatile int g_settings_ver;     /* BTT_VER_NUM the Settings module reported, 0 = none yet */
 static volatile unsigned g_page_skip;   /* bit n set: the Settings module reported BttPageSkip reason n */
 static SceUID g_ev = -1, g_thread = -1;
@@ -281,6 +313,12 @@ static void guard_write(char c, const char *who)
 
 int bttGet(int key)
 {
+	if (key == BTT_KEY_LDAC_AVAIL)
+		return btt_ldac_avail();   /* read only: what the Settings page may offer of LDAC (0 without the LDAC module) */
+	if (key == BTT_KEY_APTX_AVAIL)
+		return btt_aptx_avail();   /* read only: what the Settings page may offer of aptX (0 without the aptX module) */
+	if (key == BTT_KEY_AAC_AVAIL)
+		return btt_aac_avail();   /* read only: what the Settings page may offer of AAC (0 without the AAC module) */
 	if (key >= 0 && key < BTT_KEY_COUNT)
 		return g_set[key];
 	return BTT_ERR_ARG;
@@ -297,6 +335,25 @@ int bttSet(int key, int value)
 		if (g_ev >= 0)
 			ksceKernelSetEventFlag(g_ev, EV_WAKE);
 		return BTT_OK;
+	}
+	if (key == BTT_KEY_REFRESH_CODECS) {
+		/* Write only, not stored: the Refresh Codecs button. Only a flag for the worker's next pass (btapply.c), which makes the guards that need the
+		 * link (the list known, a call, the master switch) and logs why it declines; here the two that need no reading. */
+		int r;
+
+		if (value != 1)
+			return BTT_ERR_RANGE;
+		if (!g_startup_over) {
+			g_refresh_early++;
+			r = BTT_ERR_BUSY;
+		} else {
+			r = btt_btapply_request_refresh();
+			if (r != BTT_OK)
+				g_refresh_busy++;
+		}
+		if (g_ev >= 0)
+			ksceKernelSetEventFlag(g_ev, EV_WAKE);   /* an accepted request is taken by the next pass; a refused one is logged by it */
+		return r;
 	}
 	if (key == BTT_KEY_PAGE_SKIP) {
 		/* Remembered only, like the version: the worker logs it. */
@@ -404,12 +461,12 @@ static void settings_ver_log(void)
 		         v >> 16, (v >> 8) & 0xFF, v & 0xFF);
 }
 
-/* Logs, once per reason, that the Settings module saw the Devices page and did not add its entry (the page's
+/* Logs, once per reason, that the Settings module saw the Devices page (or a device's page) and did not add its entry or rows (the page's
  * wording changed, it was too big, or no memory was left for the copy), so a missing entry has a line in the log. */
 static void page_skip_log(void)
 {
 	static unsigned logged;
-	static const char *const why[BTT_SKIP_COUNT] = { 0, "anchor missing", "page too large", "no memory" };
+	static const char *const why[BTT_SKIP_COUNT] = { 0, "anchor missing", "page too large", "no memory", "device rows: closing tag missing", "device rows: no room" };
 	unsigned now = g_page_skip, fresh = now & ~logged;
 
 	for (int r = BTT_SKIP_ANCHOR; fresh && r < BTT_SKIP_COUNT; r++)
@@ -418,13 +475,59 @@ static void page_skip_log(void)
 	logged |= now;
 }
 
+/* Logs the Refresh Codecs presses that bttSet refused (it cannot write the log itself: it runs on the Settings app's thread), once per press. */
+static void refresh_refused_log(void)
+{
+	static unsigned logged_early, logged_busy;
+	unsigned early = g_refresh_early, busy = g_refresh_busy;
+
+	if (early != logged_early) {
+		BTT_KLOG("bluetooth apply: Refresh Codecs pressed in the start-up period: refused (%u)", early - logged_early);
+		logged_early = early;
+	}
+	if (busy != logged_busy) {
+		BTT_KLOG("bluetooth apply: Refresh Codecs pressed while the last request was in hand: refused (%u)", busy - logged_busy);
+		logged_busy = busy;
+	}
+}
+
+/* The add-ons' self-tests, from the early gate, one at a time in the order AAC, aptX, LDAC: the next is asked once the one before has its verdict (or
+ * BTT_SELFTEST_WAIT seconds after it was asked). Only while Bluetooth Turbo is on (the add-ons ignore the call otherwise, and the pass asks again when it
+ * comes on). Without an add-on its step is over at once. */
+static void selftest_pass(int on, int codec, unsigned up)
+{
+	static void (*const sync[3])(int, int) = { btt_aac_link_sync, btt_aptx_link_sync, btt_ldac_link_sync };
+	static int (*const done[3])(void) = { btt_aac_selftest_done, btt_aptx_selftest_done, btt_ldac_selftest_done };
+	static const char *const name[3] = { "AAC", "aptX", "LDAC" };
+	static int stage, asked;
+	static unsigned asked_at;
+
+	if (!on)
+		return;
+	while (stage < 3) {
+		if (!asked) {
+			asked = 1;
+			asked_at = up;
+			sync[stage](on, codec);
+		}
+		if (!done[stage]()) {
+			if (up - asked_at < BTT_SELFTEST_WAIT)
+				return;
+			BTT_KLOG("bluetooth: the %s self-test has no verdict after %us - the next one is started", name[stage], (unsigned)BTT_SELFTEST_WAIT);
+		}
+		stage++;
+		asked = 0;
+	}
+}
+
 /* The Bluetooth changes, in two steps (the Home screen up, the boot guard clear, is needed for both).
  * From BTT_EARLY_UPTIME seconds: the timing fix whenever Bluetooth Turbo is on and the latency level, the
  * two code constants. From BTT_MIN_UPTIME seconds: the controller response (the same call, which is given
  * "standard" until then), the sound preset, channels and balance on the audio sent to the headphones
  * (bteq.c), the volume curve and maximum (btvol.c) and the connection quality (btqual.c), what happens when
  * headphones disconnect (btdisc.c), the reconnecting after standby (btreconn.c), the Bluetooth name
- * (btname.c): the start-up rule is about not touching the system early.
+ * (btname.c): the start-up rule is about not touching the system early. The add-ons' self-tests (selftest_pass) touch nothing of the system and start
+ * from the early gate.
  * Every setting is forced to its default when Bluetooth Turbo is off. */
 static void bt_pass(void)
 {
@@ -435,14 +538,20 @@ static void bt_pass(void)
 		return;
 	int on = g_set[BTT_KEY_ENABLE];
 	int late = up >= BTT_MIN_UPTIME;
+	btt_aac_link_find();    /* once: is the optional AAC module loaded (every *KERNEL module has loaded by now) */
+	btt_aptx_link_find();   /* and the aptX module */
+	btt_ldac_link_find();   /* and the LDAC module */
 	if (!logged_early) {
 		logged_early = 1;
 		BTT_KLOG("bluetooth: early period over (t=%u) - timing fix and latency may go in", up);
 	}
+	selftest_pass(on, g_set[BTT_KEY_CODEC], up);   /* the add-ons' self-tests: from the early gate, one at a time */
+	btt_bt_set_aac(on && btt_aac_stream_is_aac());   /* the send queue's limit follows the codec of the stream (an AAC packet is twice the sound); nothing with the master switch off */
 	btt_bt_sync(on, on ? g_set[BTT_KEY_LOWLAT] : BTT_LAT_STANDARD,
 	            late && on && g_set[BTT_KEY_CTRL] == BTT_CTRL_FAST);
 	if (!late)
 		return;
+	g_startup_over = 1;
 	if (!logged) {
 		logged = 1;
 		BTT_KLOG("bluetooth: start-up period over (t=%u) - changes may go in", up);
@@ -450,7 +559,7 @@ static void bt_pass(void)
 	btt_bteq_sync(g_set);
 	btt_btvol_sync(g_set);
 	btt_btqual_sync(on ? g_set[BTT_KEY_QUALITY] : BTT_Q_STANDARD);
-	btt_btdisc_sync(on ? g_set[BTT_KEY_DISCONNECT] : BTT_DISC_MUTE);
+	btt_btdisc_sync(btt_btapply_hold() ? BTT_DISC_SPEAKER : on ? g_set[BTT_KEY_DISCONNECT] : BTT_DISC_MUTE);   /* an apply holds the no-mute mode while the headphones are taken down and brought back */
 	btt_btreconn_sync(on && g_set[BTT_KEY_RECONNECT]);
 	{
 		char name[BTT_NAME_MAX + 1];
@@ -458,9 +567,21 @@ static void bt_pass(void)
 		name_copy(name);
 		btt_btname_sync(on ? name : "");
 	}
+	btt_bthq_set_ldac(on && btt_ldac_codec_effective(g_set[BTT_KEY_CODEC]) == BTT_CODEC_LDAC);   /* LDAC needs the 5-slot packet types */
 	btt_bthq_sync(on ? g_set[BTT_KEY_QUALITY] : BTT_Q_STANDARD);
 	btt_btflush_sync(on && g_set[BTT_KEY_LOWLAT] == BTT_LAT_LOWEST);
+	btt_btevlog_pass(on);   /* the link log: why each link ended, who opened it, the profiles in order (it watches, it changes nothing) */
 	btt_hfp_sync(on ? g_set[BTT_KEY_HFP] : 0);   /* the hands-free connection: Read Headset Battery sets the mode; the master switch gates it */
+	btt_aac_stream_set_latency(on ? g_set[BTT_KEY_LOWLAT] : BTT_LAT_STANDARD);   /* the engine's output bound on an AAC stream */
+	btt_aac_stream_set_kbps(BTT_AACBR_KBPS(g_set[BTT_KEY_AAC_BITRATE]));   /* the bit rate asked of the headphones; the next connection uses it */
+	btt_aac_stream_set_ldac_mode((unsigned)g_set[BTT_KEY_LDAC_RATE]);   /* the LDAC bit rate: the next LDAC session, and a running one at once */
+	btt_aac_stream_set_aptx_hd(g_set[BTT_KEY_APTX_HD]);   /* aptX HD When Available: whether HD is offered to headphones that list it */
+	btt_aac_stream_set_source_only(g_set[BTT_KEY_SOURCE_ONLY]);   /* Music Source Only: the signalling hook leaves the Vita's speaker endpoint out of what it answers */
+	btt_aac_stream_pass(on, g_set[BTT_KEY_CODEC], g_set[BTT_KEY_AAC_ACCEL]);   /* AAC streaming: the hooks (only when AAC is wanted), the session */
+	btt_codecs_pass();   /* the codec list the signalling hook finished is kept (the file is the worker's) */
+	btt_link_pass(on, on ? g_set[BTT_KEY_LOWLAT] : 0);   /* the audio link's codec and figures, for bttGetLinkInfo */
+	btt_fall_pass(on, g_set[BTT_KEY_CODEC]);   /* a chosen codec that cannot be used for this connection (SBC is used): one notice for the Home screen module, once for each headset and codec */
+	btt_btapply_pass(on, g_set[BTT_KEY_CODEC], (int)BTT_AACBR_KBPS(g_set[BTT_KEY_AAC_BITRATE]), g_set[BTT_KEY_AAC_ACCEL], g_set[BTT_KEY_QUALITY], g_set[BTT_KEY_APTX_HD]);   /* settings that need a new connection: the headphones reconnect at once */
 }
 
 static int worker(SceSize args, void *argp)
@@ -471,7 +592,8 @@ static int worker(SceSize args, void *argp)
 
 	for (;;) {
 		unsigned bits = 0;
-		SceUInt timeout = BTT_CHECK_MS * 1000;
+		unsigned wait_ms = btt_aac_stream_fast() || btt_btevlog_fast() ? BTT_FAST_MS : BTT_CHECK_MS;   /* an AAC stream is up: its session starts and ends within 0.1 s; a link is new: its profiles open within seconds */
+		SceUInt timeout = wait_ms * 1000;
 		ksceKernelWaitEventFlag(g_ev, EV_WAKE | EV_STOP,
 		                        SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, &timeout);
 		if (bits & EV_STOP)
@@ -480,6 +602,7 @@ static int worker(SceSize args, void *argp)
 		btt_fwlog_poll();   /* logs SceShell's build once it is running */
 		settings_ver_log();
 		page_skip_log();
+		refresh_refused_log();
 		if (g_dirty) {
 			g_dirty = 0;
 			save_wait = BTT_SAVE_DELAY_MS;
@@ -493,7 +616,7 @@ static int worker(SceSize args, void *argp)
 
 		/* Save once the user has stopped changing things for a second. */
 		if (save_wait > 0) {
-			save_wait -= BTT_CHECK_MS;
+			save_wait -= (int)wait_ms;
 			if (save_wait <= 0 && !g_dirty)
 				settings_save();
 		}
@@ -549,7 +672,9 @@ int module_stop(SceSize args, void *argp)
 	}
 	if (g_ev >= 0)
 		ksceKernelDeleteEventFlag(g_ev);
-	/* Every Bluetooth change back to stock, and the hooks out. */
+	/* Every Bluetooth change back to stock, and the hooks out. The AAC stream first: its session ends and its hooks go before the shared one. */
+	btt_aac_stream_restore();
+	btt_btevlog_restore();
 	btt_btflush_restore();
 	btt_bthq_restore();
 	btt_hfp_restore();

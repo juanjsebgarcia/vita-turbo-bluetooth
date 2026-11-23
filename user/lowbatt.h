@@ -21,4 +21,9 @@ typedef struct {
  * so switching the notices on at a low level does not announce what was already there. */
 int lowbatt_step(LowBatt *s, int level, int connected, int enabled);
 
+/* Whether the codec notice is to be asked for on this poll (the module wakes every 2 s). While headphones are connected it is asked for on every poll, since a
+ * notice can only appear around a connection; with none connected it is asked for only on the battery's own look, every `sample_polls` polls (30 s), which also
+ * finds out when they have connected. `tick` counts polls from 0; `connected` is what the last battery look saw. */
+int lowbatt_notice_due(unsigned tick, unsigned sample_polls, int connected);
+
 #endif

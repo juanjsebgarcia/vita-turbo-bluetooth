@@ -30,6 +30,7 @@
 
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
 
+#define BTHQ_LDAC   3        /* this file's own mode: the packet types alone, for LDAC (its packets are built for one 2-DH5 packet: 677 bytes, more than two 3-slot packets carry) */
 #define OFF_PTYPE   0x7050u   /* movw r1,#0x3c18: the packet types stream start allows on a 3 Mb/s or 2 Mb/s radio link (3-slot) */
 #define OFF_CAP2M   0x7566u   /* movw r3,#0x15d: the packet cap of headphones limited to the 2 Mb/s rate (349)                    */
 #define WIN_PTYPE   0x7048u   /* the 16 bytes around the packet types                                                         */
@@ -50,6 +51,7 @@ static const volatile uint8_t *gh_text;
 static int gh_state = -1;                 /* -1 not looked at yet, 0 unusable, 1 stock bytes found */
 static SceUID gh_inj_ptype = -1, gh_inj_cap = -1;
 static int gh_mode;                       /* what is in place: 0 none, BTHQ_HIGH, BTHQ_HIGHEST     */
+static int gh_ldac;                       /* an LDAC stream is wanted (btt_bthq_set_ldac): 5-slot packets are needed whatever the quality level says */
 static int gh_failed;                     /* the mode whose change was refused (not tried again until the level changes) */
 
 static int hq_window(const volatile uint8_t *p, const uint8_t *win)
@@ -107,6 +109,8 @@ static int hq_apply(int mode)
 		gh_inj_ptype = -1;
 		return -1;
 	}
+	if (mode == BTHQ_LDAC)
+		return 0;                   /* the packet types alone: no cap, no hook (the stream is not SBC) */
 	if (mode == BTHQ_HIGH) {
 		gh_inj_cap = taiInjectDataForKernel(KERNEL_PID, gh_mod, 0, OFF_CAP2M, k_cap2m_raised, 4);
 		if (gh_inj_cap < 0) {
@@ -124,7 +128,7 @@ static int hq_apply(int mode)
 
 void btt_bthq_sync(int level)
 {
-	int mode = level == BTT_Q_HIGH ? (int)BTHQ_HIGH : level == BTT_Q_HIGHEST ? (int)BTHQ_HIGHEST : 0;
+	int mode = level == BTT_Q_HIGH ? (int)BTHQ_HIGH : level == BTT_Q_HIGHEST ? (int)BTHQ_HIGHEST : gh_ldac ? BTHQ_LDAC : 0;
 
 	if (mode != gh_failed)
 		gh_failed = 0;
@@ -133,19 +137,24 @@ void btt_bthq_sync(int level)
 	if (gh_mode) {
 		btt_btqual_hq_set(0);       /* the hook (if in) passes through while the bytes change */
 		hq_release();
-		BTT_KLOG("bluetooth audio quality: %s off", gh_mode == (int)BTHQ_HIGH ? "high" : "highest");
+		BTT_KLOG("bluetooth audio quality: %s off", gh_mode == (int)BTHQ_HIGH ? "high" : gh_mode == BTHQ_LDAC ? "5-slot packets for LDAC" : "highest");
 		gh_mode = 0;
 	}
 	if (!mode || mode == gh_failed)
 		return;
 	if (hq_apply(mode) < 0) {
 		gh_failed = mode;
-		BTT_KLOG("bluetooth audio quality: %s refused - no change", mode == (int)BTHQ_HIGH ? "high" : "highest");
+		BTT_KLOG("bluetooth audio quality: %s refused - no change", mode == (int)BTHQ_HIGH ? "high" : mode == BTHQ_LDAC ? "5-slot packets for LDAC" : "highest");
 		return;
 	}
 	gh_mode = mode;
-	btt_btqual_hq_set(mode);
-	BTT_KLOG("bluetooth audio quality: %s on (from the next connection of the headphones)", mode == (int)BTHQ_HIGH ? "high" : "highest");
+	btt_btqual_hq_set(mode == BTHQ_LDAC ? 0 : mode);
+	BTT_KLOG("bluetooth audio quality: %s on (from the next connection of the headphones)", mode == (int)BTHQ_HIGH ? "high" : mode == BTHQ_LDAC ? "5-slot packets for LDAC" : "highest");
+}
+
+void btt_bthq_set_ldac(int on)
+{
+	gh_ldac = on != 0;
 }
 
 void btt_bthq_restore(void)

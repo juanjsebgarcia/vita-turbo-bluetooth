@@ -114,6 +114,7 @@ int ksceKernelRegisterSysEventHandler(const char *name, SceSysEventHandler handl
 int ksceKernelUnregisterSysEventHandler(SceUID uid) { CHECK(uid == 0x2000, "wrong handler released"); g_sev_unregs++; g_sev_cb = 0; return 0; }
 
 #include "../kernel/btreconn_hook.c"
+#include "../kernel/btcall.c"
 #include "../kernel/btreconn.c"
 
 /* ---- helpers ------------------------------------------------------------------------------- */
@@ -129,7 +130,7 @@ static void reset(void)
 	g_hooks = g_hook_fail = g_releases = g_sev_regs = g_sev_unregs = g_sev_fail = g_lookups = 0;
 	g_sev_cb = 0;
 	/* the module's own state, as at module load */
-	gr_start_connect = 0; gr_get_conninfo = 0; gr_get_config = 0;
+	bc_connect = 0; bc_conninfo = 0; bc_config = 0; bc_disconnect = 0;
 	gr_hook = -1; gr_sev = -1; gr_failed = 0; gr_phase = PH_IDLE; gr_phase_at = gr_session_at = 0; gr_attempts = 0;
 	gr_wakes_seen = gr_rec_at_wake = 0;
 	btreconn_ref = 0; btreconn_in = btreconn_rec = btreconn_armed = 0;

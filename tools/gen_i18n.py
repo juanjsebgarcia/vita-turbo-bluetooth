@@ -1,16 +1,26 @@
 """Generate the Settings page translations: settings_app/bluetoothturbo_i18n_ids.h
 (the string ids) and settings_app/bluetoothturbo_i18n_table.h (the strings).
 
-    python3 tools/gen_i18n.py settings_app user       write the two headers, and the Home screen module's notice table
-    python3 tools/gen_i18n.py --check settings_app user   fail if the headers on disk differ, or if a
+    python3 tools/gen_i18n.py settings_app user kernel   write the two headers, the Home screen module's notice table and the
+                                                      kernel module's fallback notification table
+    python3 tools/gen_i18n.py --check settings_app user kernel   fail if the headers on disk differ, or if a
                                                       language is missing or a row differs in
                                                       its placeholders (make test)
 
 Columns follow the Vita system-language index (enum btt_lang_id). Only English
 is authoritative; the rest are machine translations, open to native-speaker fixes.
 """
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gen_i18n_codec
+
+# The one switch for the list-style hints of Codec Settings (SBC Audio Quality, AAC Bit Rate, LDAC Bit Rate, aptX HD When Available, Hardware Accelerated AAC):
+# 'newline' puts each choice on a line of its own; 'semicolon' is the fallback form, one run of text with the choices separated by semicolons. To use it, set this to 'semicolon' and run the generator
+# (python3 tools/gen_i18n.py settings_app user kernel), then rebuild. `--check` and `make test` follow whichever is set, and test both.
+HINT_LINES = 'newline'
 
 LANGS = ['ja', 'en', 'fr', 'es', 'de', 'it', 'nl', 'ptPT', 'ru', 'ko', 'zhT', 'zhS',
          'fi', 'sv', 'da', 'no', 'pl', 'ptBR', 'enGB', 'tr']
@@ -62,7 +72,7 @@ add('HINT_ENABLE',
     no='Slår på Bluetooth Turbo: retter timingen på lyden som sendes til Bluetooth-hodetelefoner (noen øreplugger forblir ellers stille) og bruker innstillingene nedenfor. Av gir konsollens opprinnelige oppførsel. Par enhetene dine på nytt mens dette er slått på, for best mulig kompatibilitet.',
     pl='Włącza Bluetooth Turbo: poprawia synchronizację dźwięku wysyłanego do słuchawek Bluetooth (niektóre słuchawki douszne bez tego milczą) i stosuje poniższe ustawienia. Po wyłączeniu konsola działa tak jak pierwotnie. Aby uzyskać maksymalną zgodność, sparuj urządzenia ponownie przy włączonej tej opcji.',
     ptBR='Ativa o Bluetooth Turbo: corrige a temporização do som enviado para os fones de ouvido Bluetooth (alguns fones de ouvido ficam mudos sem isso) e aplica as configurações abaixo. Desativado, o console funciona como originalmente. Para máxima compatibilidade, pareie seus dispositivos de novo com isto ativado.',
-    tr="Bluetooth Turbo'yu açar: Bluetooth kulaklıklara gönderilen sesin zamanlamasını düzeltir (bazı kulakiçi kulaklıklar bu olmadan sessiz kalır) ve aşağıdaki ayarları uygular. Kapalıyken konsol ilk haliyle çalışır. En iyi uyumluluk için cihazlarınızı bu açıkken yeniden eşleyin.")
+    tr="Bluetooth Turbo'yu açar: Bluetooth kulaklıklara gönderilen sesin zamanlamasını düzeltir (bazı kulakiçi kulaklıklar bu olmadan sessiz kalır) ve aşağıdaki ayarları uygular. Kapalıyken konsol ilk haliyle çalışır. En iyi uyumluluk için cihazlarınızı bu açıkken yeniden eşleştirin.")
 add('ROW_SOUND',
     ja='Bluetoothのサウンド',
     en='Bluetooth Sound',
@@ -84,25 +94,25 @@ add('ROW_SOUND',
     ptBR='Som Bluetooth',
     tr='Bluetooth sesi')
 add('HINT_SOUND',
-    ja='Bluetoothヘッドホンのサウンドです。処理は本体のプロセッサーが行うため、バッテリーをわずかに消費します。「オリジナル」では音に手を加えません。',
-    en="Sound for Bluetooth headphones. The console's processor does the work, at a small cost in battery. Original leaves the sound untouched.",
-    fr="Son pour les écouteurs Bluetooth. C'est le processeur de la console qui fait le travail, pour un faible coût en autonomie. « Original » laisse le son tel quel.",
-    es='Sonido para auriculares Bluetooth. Lo procesa la CPU de la consola, con un pequeño coste de batería. «Original» deja el sonido tal cual.',
-    de='Klang für Bluetooth-Kopfhörer. Die Verarbeitung übernimmt der Prozessor der Konsole und kostet etwas Akku. „Original“ lässt den Klang unverändert.',
-    it='Suono per le cuffie Bluetooth. Lo elabora il processore della console, con un piccolo costo in batteria. «Originale» lascia il suono invariato.',
-    nl="Geluid voor Bluetooth-koptelefoons. De processor van de console doet het werk, tegen een kleine prijs in batterij. 'Origineel' laat het geluid ongewijzigd.",
-    ptPT='Som para auscultadores Bluetooth. O processador da consola faz o trabalho, com um pequeno custo de bateria. «Original» deixa o som como está.',
-    ru='Звук для Bluetooth-наушников. Обработку выполняет процессор консоли, это немного расходует заряд. «Исходный» оставляет звук без изменений.',
-    ko="Bluetooth 헤드폰의 사운드입니다. 본체의 프로세서가 처리하므로 배터리를 조금 소모합니다. '기본'은 소리를 그대로 둡니다.",
-    zhT='設定 Bluetooth 耳機的音效。由主機的處理器負責處理，會略微消耗電池。選擇「原始」則不改變聲音。',
-    zhS='设置 Bluetooth 耳机的音效。由主机的处理器负责处理，会略微消耗电池。选择“原始”则不改变声音。',
-    fi='Bluetooth-kuulokkeiden ääni. Konsolin suoritin tekee käsittelyn, mikä kuluttaa hieman akkua. Alkuperäinen jättää äänen koskemattomaksi.',
-    sv='Ljud för Bluetooth-hörlurar. Konsolens processor gör jobbet, till en liten kostnad i batteri. Original lämnar ljudet orört.',
-    da='Lyd til Bluetooth-hovedtelefoner. Konsollens processor klarer arbejdet, til en lille pris i batteri. Original lader lyden være uændret.',
-    no='Lyd for Bluetooth-hodetelefoner. Konsollens prosessor gjør jobben, til en liten pris i batteri. Original lar lyden være uendret.',
-    pl='Dźwięk dla słuchawek Bluetooth. Przetwarzaniem zajmuje się procesor konsoli, kosztem niewielkiego zużycia baterii. „Oryginalny” zostawia dźwięk bez zmian.',
-    ptBR='Som para fones de ouvido Bluetooth. O processador do console faz o trabalho, com um pequeno custo de bateria. "Original" deixa o som como está.',
-    tr='Bluetooth kulaklıklar için ses. İşi konsolun işlemcisi yapar, pilden küçük bir bedel alır. Orijinal, sesi olduğu gibi bırakır.')
+    ja='Bluetoothヘッドホンのサウンドです。処理は本体のプロセッサーが行いますが、バッテリーの消費はごくわずかです。「オリジナル」では音に手を加えません。',
+    en="Sound for Bluetooth headphones. The console's processor does the work, at a very small cost in battery. Original leaves the sound untouched.",
+    fr="Son pour les écouteurs Bluetooth. C'est le processeur de la console qui fait le travail, pour un très faible coût en autonomie. « Original » laisse le son tel quel.",
+    es='Sonido para auriculares Bluetooth. Lo procesa la CPU de la consola, con un coste de batería muy pequeño. «Original» deja el sonido tal cual.',
+    de='Klang für Bluetooth-Kopfhörer. Die Verarbeitung übernimmt der Prozessor der Konsole und kostet sehr wenig Akku. „Original“ lässt den Klang unverändert.',
+    it='Suono per le cuffie Bluetooth. Lo elabora il processore della console, con un costo molto piccolo in batteria. «Originale» lascia il suono invariato.',
+    nl="Geluid voor Bluetooth-koptelefoons. De processor van de console doet het werk, tegen een zeer kleine prijs in batterij. 'Origineel' laat het geluid ongewijzigd.",
+    ptPT='Som para auscultadores Bluetooth. O processador da consola faz o trabalho, com um custo de bateria muito pequeno. «Original» deixa o som como está.',
+    ru='Звук для Bluetooth-наушников. Обработку выполняет процессор консоли, это совсем немного расходует заряд. «Исходный» оставляет звук без изменений.',
+    ko="Bluetooth 헤드폰의 사운드입니다. 본체의 프로세서가 처리하므로 배터리를 아주 조금 소모합니다. '기본'은 소리를 그대로 둡니다.",
+    zhT='設定 Bluetooth 耳機的音效。由主機的處理器負責處理，只會極輕微地消耗電池。選擇「原始」則不改變聲音。',
+    zhS='设置 Bluetooth 耳机的音效。由主机的处理器负责处理，只会极轻微地消耗电池。选择“原始”则不改变声音。',
+    fi='Bluetooth-kuulokkeiden ääni. Konsolin suoritin tekee käsittelyn, mikä kuluttaa akkua vain hyvin vähän. Alkuperäinen jättää äänen koskemattomaksi.',
+    sv='Ljud för Bluetooth-hörlurar. Konsolens processor gör jobbet, till en mycket liten kostnad i batteri. Original lämnar ljudet orört.',
+    da='Lyd til Bluetooth-hovedtelefoner. Konsollens processor klarer arbejdet, til en meget lille pris i batteri. Original lader lyden være uændret.',
+    no='Lyd for Bluetooth-hodetelefoner. Konsollens prosessor gjør jobben, til en veldig liten pris i batteri. Original lar lyden være uendret.',
+    pl='Dźwięk dla słuchawek Bluetooth. Przetwarzaniem zajmuje się procesor konsoli, kosztem bardzo niewielkiego zużycia baterii. „Oryginalny” zostawia dźwięk bez zmian.',
+    ptBR='Som para fones de ouvido Bluetooth. O processador do console faz o trabalho, com um custo de bateria muito pequeno. "Original" deixa o som como está.',
+    tr='Bluetooth kulaklıklar için ses. İşi konsolun işlemcisi yapar, pilden çok küçük bir bedel alır. Orijinal, sesi olduğu gibi bırakır.')
 add('ROW_CUSTOM',
     ja='カスタムイコライザー',
     en='Custom Equalizer',
@@ -581,26 +591,6 @@ add('ROW_QUALITY',
     pl='Jakość dźwięku Bluetooth',
     ptBR='Qualidade de áudio Bluetooth',
     tr='Bluetooth ses kalitesi')
-add('HINT_QUALITY',
-    ja='「標準」は本体本来の設定で、ジョイントステレオ、最大約357 kb/sです。「安定」（約260 kb/s）と「バランス重視」（約310 kb/s）は無線の使用時間が少なく、音の細かさがわずかに落ちます。特に本体から離れているときやWi-Fiが混み合っているときに音が途切れる場合にお試しください。「高」は左右を別々に約490 kb/sで送ります。「最高（試験的）」はヘッドホンの最大値、最大約670 kb/sで、より大きなパケットで送ります。一部のヘッドホンでは音がまったく出ないため、その場合は元に戻してください。変更は、ヘッドホンを次に接続したときに反映されます（電源を切ってから入れ直してください）。',
-    en="Standard is the console's own: joint stereo, up to about 357 kb/s. Stable (about 260 kb/s) and Balanced (about 310 kb/s) use less radio time, at slightly less detail: try them if the sound drops out, especially far away or with Wi-Fi busy. High sends each ear separately at about 490 kb/s. Highest (Experimental) does so at the headphones' maximum, up to about 670 kb/s, in larger packets; some headphones play no sound at all, so switch back if so. Changes apply the next time the headphones connect (switch them off and on).",
-    fr="« Standard » est le réglage de la console : stéréo conjointe, jusqu'à environ 357 kb/s. « Stable » (environ 260 kb/s) et « Équilibrée » (environ 310 kb/s) demandent moins de temps radio, avec un peu moins de détail : essayez-les si le son se coupe, surtout loin de la console ou quand le Wi-Fi est très sollicité. « Élevée » envoie chaque oreille séparément, à environ 490 kb/s. « La plus élevée (expérimentale) » le fait au maximum des écouteurs, jusqu'à environ 670 kb/s, avec des paquets plus grands ; certains écouteurs ne produisent alors aucun son : revenez en arrière si c'est le cas. Le changement s'applique à la prochaine connexion des écouteurs (éteignez-les puis rallumez-les).",
-    es='«Estándar» es el ajuste de la consola: estéreo conjunto, hasta unos 357 kb/s. «Estable» (unos 260 kb/s) y «Equilibrada» (unos 310 kb/s) usan menos tiempo de radio, con algo menos de detalle: pruébalas si el sonido se corta, sobre todo lejos de la consola o con el Wi-Fi muy usado. «Alta» envía cada oído por separado a unos 490 kb/s. «La más alta (experimental)» lo hace al máximo de los auriculares, hasta unos 670 kb/s, con paquetes más grandes; algunos auriculares no emiten ningún sonido, así que vuelve atrás si ocurre. El cambio se aplica la próxima vez que se conecten los auriculares (apágalos y vuelve a encenderlos).',
-    de='„Standard“ ist die Einstellung der Konsole: Joint-Stereo, bis etwa 357 kb/s. „Stabil“ (etwa 260 kb/s) und „Ausgewogen“ (etwa 310 kb/s) brauchen weniger Funkzeit, mit etwas weniger Detail: Probiere sie, wenn der Ton aussetzt, besonders weit entfernt oder bei stark genutztem WLAN. „Hoch“ sendet jedes Ohr getrennt mit etwa 490 kb/s. „Am höchsten (experimentell)“ tut das mit dem Maximum der Kopfhörer, bis etwa 670 kb/s, in größeren Paketen; manche Kopfhörer geben dabei gar keinen Ton aus, wechsle dann zurück. Die Änderung gilt, wenn sich die Kopfhörer das nächste Mal verbinden (schalte sie aus und wieder ein).',
-    it="«Standard» è l'impostazione della console: stereo congiunto, fino a circa 357 kb/s. «Stabile» (circa 260 kb/s) e «Bilanciata» (circa 310 kb/s) usano meno tempo radio, con un po' meno di dettaglio: provale se il suono si interrompe, soprattutto lontano dalla console o con il Wi-Fi molto usato. «Alta» invia ogni orecchio separatamente a circa 490 kb/s. «La più alta (sperimentale)» lo fa al massimo delle cuffie, fino a circa 670 kb/s, con pacchetti più grandi; alcune cuffie non riproducono alcun suono, in tal caso torna indietro. La modifica si applica alla successiva connessione delle cuffie (spegnile e riaccendile).",
-    nl="'Standaard' is de instelling van de console: joint stereo, tot ongeveer 357 kb/s. 'Stabiel' (ongeveer 260 kb/s) en 'Gebalanceerd' (ongeveer 310 kb/s) gebruiken minder zendtijd, met iets minder detail: probeer ze als het geluid wegvalt, vooral ver weg of als wifi druk is. 'Hoog' stuurt elk oor apart met ongeveer 490 kb/s. 'Hoogst (experimenteel)' doet dat op het maximum van de koptelefoons, tot ongeveer 670 kb/s, met grotere pakketten; sommige koptelefoons spelen dan helemaal geen geluid af, ga in dat geval terug. De wijziging geldt de volgende keer dat de koptelefoons verbinden (zet ze uit en weer aan).",
-    ptPT='«Padrão» é a definição da consola: estéreo conjunto, até cerca de 357 kb/s. «Estável» (cerca de 260 kb/s) e «Equilibrada» (cerca de 310 kb/s) usam menos tempo de rádio, com um pouco menos de detalhe: experimente-as se o som falhar, sobretudo longe da consola ou com o Wi-Fi muito ocupado. «Alta» envia cada ouvido em separado a cerca de 490 kb/s. «A mais alta (experimental)» faz o mesmo ao máximo dos auscultadores, até cerca de 670 kb/s, com pacotes maiores; alguns auscultadores não reproduzem qualquer som, e nesse caso volte atrás. A alteração aplica-se da próxima vez que os auscultadores se ligarem (desligue-os e volte a ligá-los).',
-    ru='«Стандарт» — настройка консоли: объединённое стерео, до примерно 357 kb/s. «Стабильное» (около 260 kb/s) и «Сбалансированное» (около 310 kb/s) занимают эфир меньше, но звук чуть менее детальный: попробуйте их, если звук пропадает, особенно вдали от консоли или при загруженном Wi-Fi. «Высокое» передаёт каждое ухо отдельно, около 490 kb/s. «Максимальное (экспериментальное)» делает это на максимуме наушников, до примерно 670 kb/s, более крупными пакетами; некоторые наушники при этом совсем не воспроизводят звук — тогда вернитесь назад. Изменение применяется при следующем подключении наушников (выключите их и включите снова).',
-    ko="'표준'은 본체 본래의 설정입니다: 조인트 스테레오, 최대 약 357 kb/s. '안정'(약 260 kb/s)과 '균형'(약 310 kb/s)은 무선 사용 시간이 더 적고 소리가 약간 덜 세밀합니다. 특히 본체에서 멀리 있거나 Wi-Fi가 혼잡할 때 소리가 끊기면 사용해 보세요. '높음'은 좌우를 따로 약 490 kb/s로 보냅니다. '가장 높음(실험적)'은 헤드폰의 최대치, 최대 약 670 kb/s로 더 큰 패킷에 담아 보냅니다. 일부 헤드폰은 소리가 전혀 나지 않으므로 그럴 때는 되돌리세요. 변경 사항은 헤드폰이 다음에 연결될 때 적용됩니다(헤드폰을 껐다가 다시 켜세요).",
-    zhT='「標準」是主機原本的設定：聯合立體聲，最高約 357 kb/s。「穩定」（約 260 kb/s）與「均衡」（約 310 kb/s）佔用的無線時間較少，聲音細節略減：若聲音中斷，尤其是離主機較遠或 Wi-Fi 繁忙時，請試試。「高」會將左右聲道分開傳送，約 490 kb/s。「最高（實驗性）」以耳機的最大值傳送，最高約 670 kb/s，封包也較大；部分耳機在此設定下完全沒有聲音，請改回原設定。變更會在耳機下次連線時生效（請關閉耳機後再開啟）。',
-    zhS='“标准”是主机原本的设置：联合立体声，最高约 357 kb/s。“稳定”（约 260 kb/s）和“均衡”（约 310 kb/s）占用的无线时间较少，声音细节略减：如果声音中断，尤其是离主机较远或 Wi-Fi 繁忙时，请试试。“高”会将左右声道分开发送，约 490 kb/s。“最高（实验性）”以耳机的最大值发送，最高约 670 kb/s，数据包也更大；部分耳机在此设置下完全没有声音，请改回原设置。更改会在耳机下次连接时生效（请关闭耳机后再打开）。',
-    fi='Vakio on konsolin oma asetus: yhteisstereo, enintään noin 357 kb/s. Vakaa (noin 260 kb/s) ja Tasapainoinen (noin 310 kb/s) tarvitsevat vähemmän radioaikaa, hieman vähemmillä yksityiskohdilla: kokeile niitä, jos ääni katkeilee, etenkin kaukana konsolista tai kun Wi-Fi on kuormitettu. Korkea lähettää kummankin korvan erikseen, noin 490 kb/s. Korkein (kokeellinen) tekee saman kuulokkeiden enimmäisarvolla, enintään noin 670 kb/s, suuremmissa paketeissa; jotkin kuulokkeet eivät toista ääntä lainkaan, palaa silloin takaisin edelliseen asetukseen. Muutos tulee voimaan, kun kuulokkeet seuraavan kerran yhdistetään (sammuta ne ja kytke uudelleen päälle).',
-    sv='Standard är konsolens egen: joint stereo, upp till cirka 357 kb/s. Stabil (cirka 260 kb/s) och Balanserad (cirka 310 kb/s) behöver mindre radiotid, med lite mindre detaljer: prova dem om ljudet hackar, särskilt långt från konsolen eller när Wi-Fi är hårt belastat. Hög skickar varje öra för sig, cirka 490 kb/s. Högst (experimentell) gör det på hörlurarnas maximum, upp till cirka 670 kb/s, med större paket; vissa hörlurar spelar inget ljud alls, byt då tillbaka. Ändringen gäller nästa gång hörlurarna ansluts (stäng av dem och slå på dem igen).',
-    da='Standard er konsollens egen: joint stereo, op til cirka 357 kb/s. Stabil (cirka 260 kb/s) og Afbalanceret (cirka 310 kb/s) kræver mindre radiotid, med lidt mindre detaljer: prøv dem, hvis lyden falder ud, især langt fra konsollen eller når Wi-Fi er travlt. Høj sender hvert øre for sig, cirka 490 kb/s. Højest (eksperimentel) gør det ved hovedtelefonernes maksimum, op til cirka 670 kb/s, med større pakker; nogle hovedtelefoner afspiller slet ingen lyd, så skift tilbage. Ændringen gælder, næste gang hovedtelefonerne forbindes (sluk dem og tænd dem igen).',
-    no='Standard er konsollens egen: joint stereo, opptil cirka 357 kb/s. Stabil (cirka 260 kb/s) og Balansert (cirka 310 kb/s) trenger mindre radiotid, med litt mindre detaljer: prøv dem hvis lyden faller ut, særlig langt fra konsollen eller når Wi-Fi er travelt. Høy sender hvert øre for seg, cirka 490 kb/s. Høyest (eksperimentell) gjør det ved hodetelefonenes maksimum, opptil cirka 670 kb/s, med større pakker; noen hodetelefoner spiller ingen lyd i det hele tatt, bytt da tilbake. Endringen gjelder neste gang hodetelefonene kobles til (slå dem av og på igjen).',
-    pl='„Standardowo” to ustawienie konsoli: stereo łączone, do około 357 kb/s. „Stabilna” (około 260 kb/s) i „Zrównoważona” (około 310 kb/s) zajmują mniej czasu radiowego, kosztem nieco mniejszej szczegółowości: wypróbuj je, jeśli dźwięk się urywa, zwłaszcza daleko od konsoli lub przy mocno obciążonym Wi-Fi. „Wysoka” wysyła każde ucho osobno, około 490 kb/s. „Najwyższa (eksperymentalna)” robi to z maksymalną przepływnością słuchawek, do około 670 kb/s, w większych pakietach; niektóre słuchawki w ogóle nie odtwarzają wtedy dźwięku — wróć wtedy do poprzedniego ustawienia. Zmiana zadziała przy następnym połączeniu słuchawek (wyłącz je i włącz ponownie).',
-    ptBR='"Padrão" é a configuração do console: estéreo conjunto, até cerca de 357 kb/s. "Estável" (cerca de 260 kb/s) e "Equilibrada" (cerca de 310 kb/s) usam menos tempo de rádio, com um pouco menos de detalhe: experimente se o som falhar, principalmente longe do console ou com o Wi-Fi muito ocupado. "Alta" envia cada ouvido separadamente, a cerca de 490 kb/s. "A mais alta (experimental)" faz isso no máximo dos fones de ouvido, até cerca de 670 kb/s, com pacotes maiores; alguns fones de ouvido não reproduzem som nenhum, e nesse caso volte atrás. A mudança vale na próxima vez que os fones de ouvido se conectarem (desligue-os e ligue de novo).',
-    tr="Standart, konsolun kendi ayarıdır: birleşik stereo, yaklaşık 357 kb/s'ye kadar. Kararlı (yaklaşık 260 kb/s) ve Dengeli (yaklaşık 310 kb/s) daha az telsiz süresi kullanır, ayrıntı biraz azalır: ses kesiliyorsa, özellikle konsoldan uzaktayken veya Wi-Fi yoğunken deneyin. Yüksek, her kulağı ayrı olarak yaklaşık 490 kb/s ile gönderir. En yüksek (deneysel) bunu kulaklıkların en yüksek değeriyle, yaklaşık 670 kb/s'ye kadar ve daha büyük paketlerle yapar; bazı kulaklıklar hiç ses çalmaz, öyleyse eski ayara dönün. Değişiklik kulaklıklar bir sonraki bağlanışında uygulanır (kapatıp yeniden açın).")
 add('ITEM_Q_BALANCED',
     ja='バランス重視', en='Balanced', fr='Équilibrée', es='Equilibrada', de='Ausgewogen', it='Bilanciata', nl='Gebalanceerd',
     ptPT='Equilibrada', ru='Сбалансированное', ko='균형', zhT='均衡', zhS='均衡', fi='Tasapainoinen', sv='Balanserad',
@@ -885,6 +875,46 @@ add('HINT_RECONN',
     pl='Gdy konsola wybudza się z uśpienia, łączy się ze słuchawkami, na których ostatnio odtwarzała dźwięk. Zapamiętuje je, gdy następnym razem zacznie się na nich dźwięk. Słuchawki sparowane także z telefonem mogą połączyć się zamiast tego z telefonem. Po wyłączeniu samodzielnie wyłączasz i włączasz słuchawki.',
     ptBR='Quando o console sai da suspensão, ele conecta os fones de ouvido em que tocou som por último. Ele os memoriza na próxima vez que o som começar neles. Fones de ouvido também pareados com um celular podem se conectar ao celular. Desativado, você mesmo desliga e liga os fones de ouvido.',
     tr='Konsol bekleme modundan uyandığında, en son ses çaldığı kulaklıklara bağlanır. Kulaklıkları, onlarda bir sonraki ses başladığında hatırlar. Telefona da eşlenmiş kulaklıklar bunun yerine telefona bağlanabilir. Kapalıyken kulaklıkları kendiniz kapatıp açarsınız.')
+add('ROW_SRCONLY',
+    ja='音楽送信専用',
+    en='Music Source Only',
+    fr='Source musicale uniquement',
+    es='Solo fuente de música',
+    de='Nur Musikquelle',
+    it='Solo sorgente musicale',
+    nl='Alleen muziekbron',
+    ptPT='Apenas fonte de música',
+    ru='Только источник музыки',
+    ko='음악 소스 전용',
+    zhT='僅作為音樂來源',
+    zhS='仅作为音乐来源',
+    fi='Vain musiikin lähde',
+    sv='Endast musikkälla',
+    da='Kun musikkilde',
+    no='Bare musikkilde',
+    pl='Tylko źródło muzyki',
+    ptBR='Apenas fonte de música',
+    tr='Yalnızca müzik kaynağı')
+add('HINT_SRCONLY',
+    ja='初期設定ではオンです。Vitaは音を送る側としてのみ接続を申し出るため、スマートスピーカーのような双方向のデバイスも正しい向きで接続されます。オフにすると、本体本来のスピーカー役も提示します。変更後は、デバイスを削除してもう一度ペアリングしてください。',
+    en="On by default: the Vita only offers to send sound, so two-way devices such as smart speakers connect the right way round. Turn off to also offer the console's original speaker role. Remove and pair the device again after changing it.",
+    fr="Activé par défaut : la Vita propose seulement d'envoyer du son, si bien que les appareils pouvant jouer les deux rôles, comme les enceintes connectées, se connectent dans le bon sens. Désactivez pour proposer aussi le rôle de haut-parleur d'origine de la console. Après un changement, supprimez l'appareil puis associez-le de nouveau.",
+    es='Activado por defecto: la Vita solo se ofrece a enviar sonido, así que los dispositivos que pueden hacer ambas cosas, como los altavoces inteligentes, se conectan en el sentido correcto. Desactívalo para ofrecer también el papel de altavoz original de la consola. Tras cambiarlo, elimina el dispositivo y vuelve a emparejarlo.',
+    de='Standardmäßig an: Die Vita bietet nur an, Ton zu senden, sodass Geräte, die beide Rollen beherrschen, etwa Smart Speaker, richtig herum verbinden. Ausschalten, um zusätzlich die ursprüngliche Lautsprecherrolle der Konsole anzubieten. Nach einer Änderung das Gerät entfernen und neu koppeln.',
+    it='Attivo per impostazione predefinita: la Vita si offre solo di inviare audio, così i dispositivi che possono fare entrambe le parti, come gli smart speaker, si collegano nel verso giusto. Disattiva per offrire anche il ruolo di altoparlante originale della console. Dopo la modifica, rimuovi il dispositivo e abbinalo di nuovo.',
+    nl='Standaard aan: de Vita biedt alleen aan om geluid te sturen, zodat apparaten die beide kunnen, zoals slimme luidsprekers, de juiste kant op verbinden. Zet uit om ook de oorspronkelijke luidsprekerrol van de console aan te bieden. Verwijder het apparaat na een wijziging en koppel het opnieuw.',
+    ptPT='Ativado por predefinição: a Vita só se oferece para enviar som, para que os dispositivos que podem fazer as duas coisas, como as colunas inteligentes, liguem no sentido certo. Desative para oferecer também a função de altifalante original da consola. Depois de alterar, remova o dispositivo e volte a emparelhá-lo.',
+    ru='По умолчанию включено: Vita предлагает только отправлять звук, поэтому устройства, которые могут играть обе роли, например умные колонки, подключаются в правильном направлении. Выключите, чтобы консоль также предлагала свою исходную роль колонки. После изменения удалите устройство и выполните сопряжение заново.',
+    ko='기본값은 켜짐입니다. Vita가 소리를 보내는 역할만 제안하므로 스마트 스피커처럼 양방향이 가능한 기기도 올바른 방향으로 연결됩니다. 끄면 본체 원래의 스피커 역할도 함께 제안합니다. 변경한 후에는 기기를 삭제하고 다시 페어링하세요.',
+    zhT='預設為開啟：Vita 只會提出傳送聲音，因此智慧型喇叭這類可雙向運作的裝置會以正確的方向連線。關閉後，也會提供主機原有的喇叭角色。變更後，請移除該裝置並重新配對。',
+    zhS='默认开启：Vita 只提出发送声音，因此智能音箱这类可双向工作的设备会以正确的方向连接。关闭后，也会提供主机原有的扬声器角色。更改后，请移除该设备并重新配对。',
+    fi='Oletuksena päällä: Vita tarjoutuu vain lähettämään ääntä, joten kaksisuuntaiset laitteet, kuten älykaiuttimet, yhdistyvät oikein päin. Kytke pois päältä, jos haluat tarjota myös konsolin alkuperäisen kaiuttimen roolin. Poista laite ja muodosta laitepari uudelleen muutoksen jälkeen.',
+    sv='På som standard: Vita erbjuder bara att skicka ljud, så enheter som kan båda delarna, till exempel smarta högtalare, ansluter åt rätt håll. Stäng av för att även erbjuda konsolens ursprungliga högtalarroll. Ta bort enheten och parkoppla den igen efter en ändring.',
+    da='Slået til som standard: Vita tilbyder kun at sende lyd, så enheder, der kan begge dele, som smarte højttalere, forbinder den rigtige vej. Slå fra for også at tilbyde konsollens oprindelige højttalerrolle. Fjern enheden, og par den igen efter en ændring.',
+    no='På som standard: Vita tilbyr bare å sende lyd, så enheter som kan begge deler, som smarthøyttalere, kobler til riktig vei. Slå av for også å tilby konsollens opprinnelige høyttalerrolle. Fjern enheten og par den på nytt etter en endring.',
+    pl='Domyślnie włączone: Vita oferuje tylko wysyłanie dźwięku, więc urządzenia, które mogą pełnić obie role, na przykład inteligentne głośniki, łączą się w odpowiednią stronę. Wyłącz, aby konsola oferowała też swoją pierwotną rolę głośnika. Po zmianie usuń urządzenie i sparuj je ponownie.',
+    ptBR='Ativado por padrão: o Vita só se oferece para enviar som, para que dispositivos que podem fazer as duas coisas, como alto-falantes inteligentes, se conectem no sentido certo. Desative para oferecer também a função de alto-falante original do console. Depois de alterar, remova o dispositivo e pareie-o de novo.',
+    tr='Varsayılan olarak açık: Vita yalnızca ses göndermeyi önerir, böylece akıllı hoparlörler gibi iki yönlü cihazlar doğru yönde bağlanır. Konsolun özgün hoparlör rolünü de sunmak için kapatın. Değiştirdikten sonra cihazı kaldırıp yeniden eşleştirin.')
 add('ROW_NAME',
     ja='Bluetooth名',
     en='Bluetooth Name',
@@ -926,25 +956,25 @@ add('HINT_NAME',
     ptBR='O nome que outros dispositivos veem quando procuram este console por Bluetooth: até 16 letras, números e símbolos, sem acentos. Deixe vazio para PlayStation Vita. Vale a partir da próxima vez que o Bluetooth for ligado, então desligue e ligue o Bluetooth. Dispositivos que já conhecem o console podem manter o nome anterior. Um nome que o console recusar pode continuar visível neste campo até a página ser aberta de novo.',
     tr="Diğer cihazların bu konsolu Bluetooth ile ararken gördüğü ad: en fazla 16 harf, rakam ve simge, aksansız. PlayStation Vita için boş bırakın. Bluetooth bir sonraki açılışında geçerli olur, bu yüzden Bluetooth'u kapatıp yeniden açın. Konsolu zaten tanıyan cihazlar eski adı koruyabilir. Konsolun reddettiği bir ad, sayfa yeniden açılana kadar bu alanda görünmeye devam edebilir.")
 add('ROW_NAMENOW',
-    ja='現在のBluetooth名',
-    en='Current Bluetooth Name',
-    fr='Nom Bluetooth actuel',
-    es='Nombre Bluetooth actual',
-    de='Aktueller Bluetooth-Name',
-    it='Nome Bluetooth attuale',
-    nl='Huidige Bluetooth-naam',
-    ptPT='Nome Bluetooth atual',
-    ru='Текущее имя Bluetooth',
-    ko='현재 Bluetooth 이름',
-    zhT='目前的 Bluetooth 名稱',
-    zhS='当前的 Bluetooth 名称',
-    fi='Nykyinen Bluetooth-nimi',
-    sv='Nuvarande Bluetooth-namn',
-    da='Nuværende Bluetooth-navn',
-    no='Nåværende Bluetooth-navn',
-    pl='Bieżąca nazwa Bluetooth',
-    ptBR='Nome do Bluetooth atual',
-    tr='Geçerli Bluetooth adı')
+    ja='Bluetoothネットワーク名',
+    en='Bluetooth Network Name',
+    fr='Nom du réseau Bluetooth',
+    es='Nombre de red Bluetooth',
+    de='Bluetooth-Netzwerkname',
+    it='Nome rete Bluetooth',
+    nl='Bluetooth-netwerknaam',
+    ptPT='Nome da rede Bluetooth',
+    ru='Имя сети Bluetooth',
+    ko='Bluetooth 네트워크 이름',
+    zhT='Bluetooth 網路名稱',
+    zhS='Bluetooth 网络名称',
+    fi='Bluetooth-verkon nimi',
+    sv='Bluetooth-nätverksnamn',
+    da='Bluetooth-netværksnavn',
+    no='Bluetooth-nettverksnavn',
+    pl='Nazwa sieci Bluetooth',
+    ptBR='Nome da rede Bluetooth',
+    tr='Bluetooth ağ adı')
 add('HINT_NAMENOW',
     ja='Bluetooth名に設定されている名前です。新しい名前は次にBluetoothをオンにしたときから使われます。この項目は、ページを次に開いたときに更新されます。',
     en='The name set under Bluetooth Name. A new name is used from the next time Bluetooth turns on. This row updates the next time the page is opened.',
@@ -1028,6 +1058,27 @@ add('ITEM_NOTREPORTED',
     pl='Brak danych',
     ptBR='Não informado',
     tr='Bildirilmedi')
+# The Headset Battery row's value while no headset is connected (Not Reported is for a connected headset that sends no level).
+add('ITEM_NOTCONNECTED',
+    ja='未接続',
+    en='Not Connected',
+    fr='Non connecté',
+    es='No conectado',
+    de='Nicht verbunden',
+    it='Non connesso',
+    nl='Niet verbonden',
+    ptPT='Não ligado',
+    ru='Не подключено',
+    ko='연결 안 됨',
+    zhT='未連線',
+    zhS='未连接',
+    fi='Ei yhdistetty',
+    sv='Inte ansluten',
+    da='Ikke tilsluttet',
+    no='Ikke tilkoblet',
+    pl='Brak połączenia',
+    ptBR='Não conectado',
+    tr='Bağlı değil')
 add('ROW_READBATT',
     ja='ヘッドセットのバッテリー残量の読み取り',
     en='Read Headset Battery',
@@ -1067,7 +1118,7 @@ add('HINT_READBATT',
     no='Åpner handsfree-forbindelsen som headset bruker til batterinivå og mikrofon. Når den er av, brukes bare konsollens egen headsetforbindelse. Etter en endring: fjern headsettet under Bluetooth-enheter og par det på nytt.',
     pl='Otwiera połączenie głośnomówiące, którego zestawy słuchawkowe używają do poziomu baterii i mikrofonu. Po wyłączeniu używane jest tylko własne połączenie konsoli z zestawem. Po zmianie usuń zestaw w sekcji „Urządzenia Bluetooth” i sparuj go ponownie.',
     ptBR='Abre a conexão viva-voz que os headsets usam para o nível da bateria e o microfone. Desligado, usa apenas a conexão de headset própria do console. Depois de alterar, remova o headset em Dispositivos Bluetooth e pareie-o de novo.',
-    tr="Kulaklıkların pil düzeyi ve mikrofon için kullandığı eller serbest bağlantısını açar. Kapalıyken yalnızca konsolun kendi kulaklık bağlantısı kullanılır. Değiştirdikten sonra kulaklığı Bluetooth Cihazları'ndan kaldırıp yeniden eşleyin.")
+    tr="Kulaklıkların pil düzeyi ve mikrofon için kullandığı eller serbest bağlantısını açar. Kapalıyken yalnızca konsolun kendi kulaklık bağlantısı kullanılır. Değiştirdikten sonra kulaklığı Bluetooth Cihazları'ndan kaldırıp yeniden eşleştirin.")
 add('ROW_LOWBATT',
     ja='バッテリー残量低下の通知',
     en='Low Battery Notifications',
@@ -1109,6 +1160,277 @@ add('HINT_LOWBATT',
     ptBR='Mostra uma notificação do sistema quando a bateria do headset Bluetooth conectado cai para 20%, 10% e 5%, uma vez por descarga. Requer um headset que informe a bateria; os 5% exigem um que informe em passos menores que 10%.',
     tr="Bağlı Bluetooth kulaklığın pili %20, %10 ve %5'e düştüğünde bir sistem bildirimi gösterir, her boşalmada bir kez. Pil düzeyini bildiren bir kulaklık gerekir; %5 için %10'dan ince adımlarla bildiren bir kulaklık gerekir.")
 
+# ---- 0.2.0: the AAC rows (Bluetooth Codec, AAC Bit Rate, Hardware Accelerated AAC) and the two rows they change ----
+# Codec names and the bit rates are the same in every language.
+add('ITEM_CODEC_SBC', **{l: 'SBC' for l in LANGS})
+add('ITEM_CODEC_AAC', **{l: 'AAC' for l in LANGS})
+add('ITEM_CODEC_APTX', **{l: 'aptX™' for l in LANGS})
+add('ITEM_CODEC_LDAC', **{l: 'LDAC™' for l in LANGS})
+add('ITEM_LDAC_330', **{l: '330 kb/s' for l in LANGS})
+add('ITEM_LDAC_660', **{l: '660 kb/s' for l in LANGS})
+add('ITEM_LDAC_ABR',
+    ja='自動調整',
+    en='Adaptive',
+    fr='Adaptatif',
+    es='Adaptativo',
+    de='Adaptiv',
+    it='Adattivo',
+    nl='Adaptief',
+    ptPT='Adaptável',
+    ru='Адаптивный',
+    ko='적응형',
+    zhT='自適應',
+    zhS='自适应',
+    fi='Mukautuva',
+    sv='Adaptiv',
+    da='Adaptiv',
+    no='Adaptiv',
+    pl='Adaptacyjny',
+    ptBR='Adaptável',
+    tr='Uyarlanabilir')
+add('ROW_LDACRATE',
+    ja='LDACビットレート',
+    en='LDAC Bit Rate',
+    fr='Débit LDAC',
+    es='Tasa de bits de LDAC',
+    de='LDAC-Bitrate',
+    it='Bit rate LDAC',
+    nl='LDAC-bitrate',
+    ptPT='Débito de LDAC',
+    ru='Битрейт LDAC',
+    ko='LDAC 비트레이트',
+    zhT='LDAC 位元率',
+    zhS='LDAC 码率',
+    fi='LDAC-bittinopeus',
+    sv='LDAC-bithastighet',
+    da='LDAC-bithastighed',
+    no='LDAC-bithastighet',
+    pl='Przepływność LDAC',
+    ptBR='Taxa de bits do LDAC',
+    tr='LDAC bit hızı')
+for _r in (128, 192, 256, 320):
+    add('ITEM_RATE_%d' % _r, **{l: '%d kb/s' % _r for l in LANGS})
+
+add('ROW_CODEC',
+    ja='Bluetoothコーデック',
+    en='Bluetooth Codec',
+    fr='Codec Bluetooth',
+    es='Códec Bluetooth',
+    de='Bluetooth-Codec',
+    it='Codec Bluetooth',
+    nl='Bluetooth-codec',
+    ptPT='Codec Bluetooth',
+    ru='Кодек Bluetooth',
+    ko='Bluetooth 코덱',
+    zhT='Bluetooth 編解碼器',
+    zhS='Bluetooth 编解码器',
+    fi='Bluetooth-koodekki',
+    sv='Bluetooth-codec',
+    da='Bluetooth-codec',
+    no='Bluetooth-kodek',
+    pl='Kodek Bluetooth',
+    ptBR='Codec Bluetooth',
+    tr='Bluetooth codec')
+# Three hints for the one row, by what the console can offer: AAC or aptX usable, neither add-on installed, an add-on there but neither usable (yet).
+add('HINT_CODEC',
+    ja='SBCは本体の標準のコーデックです。AAC、aptX、LDACは、それぞれのアドオンを入れている場合に、対応したヘッドホンにだけ、どちら側から接続した場合でも送ります。AACとLDACは下のコーデック設定で選んだビットレートで、aptXは、ヘッドホンが対応していて「可能ならaptX HD」がオンのとき、aptX HD（試験的）で送ります。ほかのヘッドホンはSBCのままです。ヘッドホンは変更を反映するため、一時的に再接続されます。SBCに戻したあとヘッドホンから音が出ない場合は、ペアリングを解除してからもう一度ペアリングしてください。',
+    en="SBC is the console's default codec. AAC, aptX and LDAC, if their add-ons are installed, are sent only to headphones that offer them, whichever side connects them: AAC and LDAC at the bit rates set in Codec Settings, aptX as aptX HD (experimental) when the headphones offer it and aptX HD When Available is on. All other headphones keep SBC. The headphones reconnect briefly to apply a change. If headphones stay silent after you go back to SBC, remove them and pair them again.",
+    fr="SBC est le codec par défaut de la console. AAC, aptX et LDAC, si leurs modules complémentaires sont installés, ne sont envoyés qu'aux écouteurs qui les proposent, quel que soit le côté qui lance la connexion : AAC et LDAC aux débits réglés dans Paramètres du codec, aptX en aptX HD (expérimental) si les écouteurs le proposent et que « aptX HD si disponible » est activé. Les autres écouteurs gardent SBC. Les écouteurs se reconnectent brièvement pour appliquer le changement. Si des écouteurs restent muets après un retour à SBC, supprimez-les puis associez-les de nouveau.",
+    es='SBC es el códec predeterminado de la consola. AAC, aptX y LDAC, si sus complementos están instalados, se envían solo a los auriculares que los admiten, sea cual sea el lado que inicie la conexión: AAC y LDAC a las tasas de bits fijadas en Ajustes del códec, aptX como aptX HD (experimental) si los auriculares lo ofrecen y «aptX HD si está disponible» está activado. Los demás auriculares siguen con SBC. Los auriculares se reconectan brevemente para aplicar el cambio. Si unos auriculares se quedan sin sonido al volver a SBC, elimínalos y vuelve a emparejarlos.',
+    de='SBC ist der Standard-Codec der Konsole. AAC, aptX und LDAC werden, wenn ihre Zusatzmodule installiert sind, nur an Kopfhörer gesendet, die sie unterstützen, egal welche Seite die Verbindung aufbaut: AAC und LDAC mit den unter Codec-Einstellungen gewählten Bitraten, aptX als aptX HD (experimentell), wenn die Kopfhörer das anbieten und „aptX HD, wenn verfügbar“ eingeschaltet ist. Alle anderen Kopfhörer bleiben bei SBC. Die Kopfhörer verbinden sich kurz neu, um die Änderung zu übernehmen. Bleiben Kopfhörer nach der Rückkehr zu SBC stumm, entferne sie und koppele sie neu.',
+    it='SBC è il codec predefinito della console. AAC, aptX e LDAC, se i loro componenti aggiuntivi sono installati, vengono inviati solo alle cuffie che li supportano, da qualunque lato parta la connessione: AAC e LDAC ai bit rate impostati in Impostazioni codec, aptX come aptX HD (sperimentale) se le cuffie lo offrono e «aptX HD se disponibile» è attivo. Le altre cuffie restano su SBC. Le cuffie si riconnettono brevemente per applicare la modifica. Se le cuffie restano mute dopo il ritorno a SBC, rimuovile e abbinale di nuovo.',
+    nl='SBC is de standaardcodec van de console. AAC, aptX en LDAC worden, als hun uitbreidingen zijn geïnstalleerd, alleen gestuurd naar koptelefoons die ze ondersteunen, ongeacht welke kant de verbinding start: AAC en LDAC met de bij Codec-instellingen gekozen bitrates, aptX als aptX HD (experimenteel) als de koptelefoon dat aanbiedt en \'aptX HD indien beschikbaar\' aanstaat. Alle andere koptelefoons houden SBC. De koptelefoons maken kort opnieuw verbinding om de wijziging toe te passen. Blijft een koptelefoon stil nadat je naar SBC bent teruggegaan, verwijder hem dan en koppel hem opnieuw.',
+    ptPT='SBC é o codec predefinido da consola. O AAC, o aptX e o LDAC, se os seus extras estiverem instalados, só são enviados para auscultadores que os suportem, seja qual for o lado que inicie a ligação: o AAC e o LDAC aos débitos definidos em Definições do codec, o aptX como aptX HD (experimental) se os auscultadores o oferecerem e «aptX HD quando disponível» estiver ativado. Os restantes auscultadores continuam em SBC. Os auscultadores voltam a ligar-se brevemente para aplicar a alteração. Se uns auscultadores ficarem mudos depois de voltar ao SBC, remova-os e volte a emparelhá-los.',
+    ru='SBC — кодек консоли по умолчанию. AAC, aptX и LDAC, если установлены их дополнения, передаются только на наушники, которые их поддерживают, независимо от того, какая сторона устанавливает соединение: AAC и LDAC — с битрейтами, заданными в настройках кодека, aptX — как aptX HD (экспериментально), если наушники его предлагают и включён пункт «aptX HD, если доступен». Остальные наушники остаются на SBC. Наушники ненадолго переподключаются, чтобы применить изменение. Если после возврата к SBC наушники молчат, удалите их из списка и выполните сопряжение заново.',
+    ko='SBC는 본체의 기본 코덱입니다. AAC, aptX, LDAC는 각 추가 모듈이 설치되어 있을 때, 해당 방식을 지원하는 헤드폰에만 어느 쪽에서 연결하든 보냅니다. AAC와 LDAC는 코덱 설정에서 정한 비트레이트로, aptX는 헤드폰이 지원하고 \'가능하면 aptX HD 사용\'이 켜져 있으면 aptX HD(실험적)로 보냅니다. 그 밖의 헤드폰은 SBC를 계속 사용합니다. 변경 사항을 적용하기 위해 헤드폰이 잠시 다시 연결됩니다. SBC로 되돌린 뒤 헤드폰에서 소리가 나지 않으면 헤드폰 등록을 삭제하고 다시 페어링하세요.',
+    zhT='SBC 是主機的預設編解碼器。若已安裝 AAC、aptX 與 LDAC 的附加模組，它們只會傳送給支援的耳機，無論由哪一方發起連線：AAC 與 LDAC 使用編解碼器設定中所設定的位元率；若耳機支援 aptX HD（實驗性）且已開啟「可用時使用 aptX HD」，aptX 就以 aptX HD 傳送。其他耳機仍使用 SBC。耳機會短暫重新連線以套用變更。若改回 SBC 後耳機沒有聲音，請移除耳機並重新配對。',
+    zhS='SBC 是主机的默认编解码器。如果已安装 AAC、aptX 和 LDAC 的附加模块，它们只会发送给支持的耳机，无论由哪一方发起连接：AAC 和 LDAC 使用编解码器设置中所设置的码率；如果耳机支持 aptX HD（实验性）且已开启“可用时使用 aptX HD”，aptX 就以 aptX HD 发送。其他耳机仍使用 SBC。耳机会短暂重新连接以应用更改。如果改回 SBC 后耳机没有声音，请移除耳机并重新配对。',
+    fi='SBC on konsolin oletuskoodekki. AAC, aptX ja LDAC, jos niiden lisäosat on asennettu, lähetetään vain kuulokkeille, jotka tukevat niitä, riippumatta siitä, kumpi osapuoli muodostaa yhteyden: AAC ja LDAC koodekin asetuksissa asetetuilla bittinopeuksilla, aptX aptX HD:nä (kokeellinen), jos kuulokkeet tarjoavat sitä ja ”aptX HD, kun saatavilla” on päällä. Muut kuulokkeet käyttävät edelleen SBC:tä. Kuulokkeet yhdistyvät hetkeksi uudelleen muutoksen käyttöön ottamiseksi. Jos kuulokkeet pysyvät hiljaa SBC:hen palaamisen jälkeen, poista ne ja muodosta laitepari uudelleen.',
+    sv='SBC är konsolens standardcodec. AAC, aptX och LDAC, om deras tillägg är installerade, skickas bara till hörlurar som stöder dem, oavsett vilken sida som ansluter: AAC och LDAC med bithastigheterna som anges i Codec-inställningar, aptX som aptX HD (experimentellt) om hörlurarna erbjuder det och ”aptX HD när det finns” är på. Alla andra hörlurar behåller SBC. Hörlurarna ansluter kort på nytt för att tillämpa ändringen. Om hörlurar förblir tysta efter att du gått tillbaka till SBC, ta bort dem och parkoppla dem igen.',
+    da='SBC er konsollens standardcodec. AAC, aptX og LDAC, hvis deres tilføjelsesmoduler er installeret, sendes kun til hovedtelefoner, der understøtter dem, uanset hvilken side der opretter forbindelsen: AAC og LDAC med de bithastigheder, der er angivet i Codec-indstillinger, aptX som aptX HD (eksperimentelt), hvis hovedtelefonerne tilbyder det og »aptX HD når det er muligt« er slået til. Alle andre hovedtelefoner beholder SBC. Hovedtelefonerne forbindes kort igen for at anvende ændringen. Hvis hovedtelefoner forbliver tavse, efter at du er gået tilbage til SBC, så fjern dem og par dem igen.',
+    no='SBC er konsollens standardkodek. AAC, aptX og LDAC, hvis tilleggene deres er installert, sendes bare til hodetelefoner som støtter dem, uansett hvilken side som kobler til: AAC og LDAC med bithastighetene som er satt i Kodekinnstillinger, aptX som aptX HD (eksperimentelt) hvis hodetelefonene tilbyr det og «aptX HD når tilgjengelig» er på. Alle andre hodetelefoner beholder SBC. Hodetelefonene kobles kort til igjen for å bruke endringen. Hvis hodetelefoner forblir stille etter at du har gått tilbake til SBC, fjern dem og par dem på nytt.',
+    pl='SBC to domyślny kodek konsoli. AAC, aptX i LDAC, jeśli ich dodatki są zainstalowane, są wysyłane tylko do słuchawek, które je obsługują, niezależnie od tego, która strona nawiązuje połączenie: AAC i LDAC z przepływnościami ustawionymi w Ustawieniach kodeka, aptX jako aptX HD (eksperymentalnie), jeśli słuchawki to oferują i włączona jest opcja „aptX HD, gdy dostępne”. Pozostałe słuchawki zostają przy SBC. Słuchawki na chwilę łączą się ponownie, aby zastosować zmianę. Jeśli po powrocie do SBC słuchawki milczą, usuń je i sparuj ponownie.',
+    ptBR='SBC é o codec padrão do console. O AAC, o aptX e o LDAC, se os complementos deles estiverem instalados, só são enviados para fones de ouvido que os suportem, não importa qual lado inicie a conexão: o AAC e o LDAC nas taxas de bits definidas em Configurações do codec, o aptX como aptX HD (experimental) se os fones de ouvido o oferecerem e "aptX HD quando disponível" estiver ligado. Os demais fones de ouvido continuam em SBC. Os fones de ouvido se reconectam brevemente para aplicar a mudança. Se os fones de ouvido ficarem mudos depois de voltar ao SBC, remova-os e pareie de novo.',
+    tr="SBC, konsolun varsayılan codec'idir. AAC, aptX ve LDAC, eklentileri kuruluysa, yalnızca onları destekleyen kulaklıklara, bağlantıyı hangi taraf başlatırsa başlatsın gönderilir: AAC ve LDAC, Codec ayarları'nda belirlenen bit hızlarıyla, aptX ise kulaklık sunuyorsa ve \"Varsa aptX HD\" açıksa aptX HD (deneysel) olarak. Diğer kulaklıklar SBC kullanmaya devam eder. Değişikliği uygulamak için kulaklıklar kısa süreliğine yeniden bağlanır. SBC'ye döndükten sonra kulaklıklar sessiz kalırsa onları kaldırıp yeniden eşleştirin.")
+add('HINT_CODEC_NOADDON',
+    ja='使用できるのは本体の標準のコーデックであるSBCだけです。AAC、aptX、LDACは任意のアドオンとして、GitHubのBluetooth Turboのページ（リリース）で入手できます。',
+    en="Only SBC, the console's default codec, can be used. AAC, aptX and LDAC come as optional add-ons, available from the Bluetooth Turbo page on GitHub (the releases).",
+    fr="Seul SBC, le codec par défaut de la console, est utilisable. AAC, aptX et LDAC sont des modules complémentaires facultatifs, disponibles sur la page Bluetooth Turbo de GitHub (les versions publiées).",
+    es='Solo se puede usar SBC, el códec predeterminado de la consola. AAC, aptX y LDAC son complementos opcionales, disponibles en la página de Bluetooth Turbo en GitHub (las versiones publicadas).',
+    de='Nur SBC, der Standard-Codec der Konsole, kann verwendet werden. AAC, aptX und LDAC gibt es als optionale Zusatzmodule auf der Seite von Bluetooth Turbo auf GitHub (unter den Veröffentlichungen).',
+    it='È possibile usare solo SBC, il codec predefinito della console. AAC, aptX e LDAC sono componenti aggiuntivi facoltativi, disponibili nella pagina di Bluetooth Turbo su GitHub (le release).',
+    nl='Alleen SBC, de standaardcodec van de console, is te gebruiken. AAC, aptX en LDAC zijn optionele uitbreidingen, te vinden op de Bluetooth Turbo-pagina op GitHub (de releases).',
+    ptPT='Só é possível usar o SBC, o codec predefinido da consola. O AAC, o aptX e o LDAC são extras opcionais, disponíveis na página do Bluetooth Turbo no GitHub (as versões publicadas).',
+    ru='Доступен только SBC — кодек консоли по умолчанию. AAC, aptX и LDAC поставляются как необязательные дополнения на странице Bluetooth Turbo на GitHub (в разделе релизов).',
+    ko='본체의 기본 코덱인 SBC만 사용할 수 있습니다. AAC, aptX, LDAC는 선택 사항인 추가 모듈로, GitHub의 Bluetooth Turbo 페이지(릴리스)에서 받을 수 있습니다.',
+    zhT='目前只能使用主機的預設編解碼器 SBC。AAC、aptX 與 LDAC 是選用的附加模組，可從 GitHub 上的 Bluetooth Turbo 頁面（發行版本）取得。',
+    zhS='目前只能使用主机的默认编解码器 SBC。AAC、aptX 和 LDAC 是可选的附加模块，可从 GitHub 上的 Bluetooth Turbo 页面（发布版本）获取。',
+    fi='Vain SBC, konsolin oletuskoodekki, on käytettävissä. AAC, aptX ja LDAC ovat valinnaisia lisäosia, jotka saa Bluetooth Turbon GitHub-sivulta (julkaisuista).',
+    sv='Bara SBC, konsolens standardcodec, kan användas. AAC, aptX och LDAC finns som valfria tillägg på Bluetooth Turbos sida på GitHub (under releaser).',
+    da='Kun SBC, konsollens standardcodec, kan bruges. AAC, aptX og LDAC findes som valgfrie tilføjelsesmoduler på Bluetooth Turbos side på GitHub (under udgivelser).',
+    no='Bare SBC, konsollens standardkodek, kan brukes. AAC, aptX og LDAC finnes som valgfrie tillegg på Bluetooth Turbo-siden på GitHub (under utgivelser).',
+    pl='Można używać tylko SBC, domyślnego kodeka konsoli. AAC, aptX i LDAC są opcjonalnymi dodatkami, dostępnymi na stronie Bluetooth Turbo w serwisie GitHub (w wydaniach).',
+    ptBR='Só é possível usar o SBC, o codec padrão do console. O AAC, o aptX e o LDAC são complementos opcionais, disponíveis na página do Bluetooth Turbo no GitHub (as versões publicadas).',
+    tr="Yalnızca konsolun varsayılan codec'i olan SBC kullanılabilir. AAC, aptX ve LDAC, GitHub'daki Bluetooth Turbo sayfasından (sürümler) edinilebilen isteğe bağlı eklentilerdir.")
+add('HINT_CODEC_WAIT',
+    ja='現在AAC、aptX、LDACは使用できません。それぞれ、本体の起動から約45秒後、起動時の自己診断に合格すると選べるようになります。診断に失敗した場合や、前回の使用が異常終了した場合は、選べません。それまでは本体の標準のコーデックであるSBCだけが選べます。',
+    en="AAC, aptX and LDAC cannot be used right now. Each is offered about 45 seconds after the console starts, once its start-up self-check has passed, and not at all if that check failed or its last session ended badly. Until then only SBC, the console's default codec, is offered.",
+    fr="AAC, aptX et LDAC sont indisponibles pour le moment. Chacun est proposé environ 45 secondes après le démarrage de la console, une fois son test automatique réussi, et jamais si le test automatique a échoué ou si sa dernière session s'est mal terminée. D'ici là, seul SBC, le codec par défaut de la console, est proposé.",
+    es='AAC, aptX y LDAC no se pueden usar ahora mismo. Cada uno se ofrece aproximadamente 45 segundos después de arrancar la consola, cuando supera su autocomprobación, y no se ofrece si esta falló o si su última sesión terminó mal. Mientras tanto solo se ofrece SBC, el códec predeterminado de la consola.',
+    de='AAC, aptX und LDAC lassen sich gerade nicht verwenden. Jedes wird etwa 45 Sekunden nach dem Start der Konsole angeboten, sobald seine Selbstprüfung bestanden ist, und gar nicht, wenn die Prüfung fehlschlug oder seine letzte Sitzung schlecht endete. Bis dahin wird nur SBC, der Standard-Codec der Konsole, angeboten.',
+    it="AAC, aptX e LDAC al momento non sono utilizzabili. Ciascuno viene offerto circa 45 secondi dopo l'avvio della console, quando ha superato il test automatico, e non viene offerto affatto se il test è fallito o se la sua ultima sessione è terminata male. Fino ad allora è offerto solo SBC, il codec predefinito della console.",
+    nl='AAC, aptX en LDAC zijn nu niet te gebruiken. Elk wordt ongeveer 45 seconden na het opstarten van de console aangeboden, zodra de zelftest is geslaagd, en helemaal niet als die test mislukte of de laatste sessie slecht eindigde. Tot dan wordt alleen SBC, de standaardcodec van de console, aangeboden.',
+    ptPT='O AAC, o aptX e o LDAC não podem ser usados neste momento. Cada um é oferecido cerca de 45 segundos depois de a consola arrancar, quando passa na sua autoverificação, e não é oferecido de todo se a verificação falhar ou se a sua última sessão terminar mal. Até lá, só é oferecido o SBC, o codec predefinido da consola.',
+    ru='AAC, aptX и LDAC сейчас использовать нельзя. Каждый становится доступен примерно через 45 секунд после запуска консоли, когда пройдена его самопроверка, и не будет доступен, если проверка не пройдена или его последний сеанс завершился сбоем. До этого доступен только SBC — кодек консоли по умолчанию.',
+    ko='지금은 AAC, aptX, LDAC를 사용할 수 없습니다. 각각 본체를 켠 지 약 45초 뒤, 시작 시 자체 점검을 통과하면 선택할 수 있게 됩니다. 점검에 실패했거나 마지막 사용이 비정상으로 끝난 경우에는 선택할 수 없습니다. 그때까지는 본체의 기본 코덱인 SBC만 선택할 수 있습니다.',
+    zhT='目前無法使用 AAC、aptX 與 LDAC。三者各自在主機啟動約 45 秒後，通過啟動時的自我檢查才會開放；若檢查失敗，或上一次連線異常結束，則不會開放。在此之前只能選擇主機的預設編解碼器 SBC。',
+    zhS='目前无法使用 AAC、aptX 和 LDAC。三者各自在主机启动约 45 秒后，通过启动时的自检才会开放；如果检查失败，或上一次连接异常结束，则不会开放。在此之前只能选择主机的默认编解码器 SBC。',
+    fi='AAC, aptX ja LDAC eivät ole nyt käytettävissä. Kukin tarjotaan noin 45 sekunnin kuluttua konsolin käynnistymisestä, kun sen käynnistysitsetarkastus on läpäisty, eikä lainkaan, jos tarkastus epäonnistui tai sen viimeinen istunto päättyi huonosti. Siihen asti tarjolla on vain SBC, konsolin oletuskoodekki.',
+    sv='AAC, aptX och LDAC kan inte användas just nu. Var och en erbjuds ungefär 45 sekunder efter att konsolen startat, när dess självtest har godkänts, och inte alls om testet misslyckades eller dess senaste session tog slut på fel sätt. Tills dess erbjuds bara SBC, konsolens standardcodec.',
+    da='AAC, aptX og LDAC kan ikke bruges lige nu. Hver af dem tilbydes cirka 45 sekunder efter, at konsollen er startet, når dens selvtest er bestået, og slet ikke, hvis testen mislykkedes, eller den seneste session sluttede dårligt. Indtil da tilbydes kun SBC, konsollens standardcodec.',
+    no='AAC, aptX og LDAC kan ikke brukes akkurat nå. Hver av dem tilbys omtrent 45 sekunder etter at konsollen har startet, når selvtesten er bestått, og ikke i det hele tatt hvis testen mislyktes eller den siste økten endte dårlig. Inntil da tilbys bare SBC, konsollens standardkodek.',
+    pl='AAC, aptX i LDAC nie są teraz dostępne. Każdy pojawia się około 45 sekund po uruchomieniu konsoli, gdy przejdzie samokontrolę, i wcale, jeśli kontrola się nie powiodła lub jego ostatnia sesja zakończyła się błędem. Do tego czasu dostępny jest tylko SBC, domyślny kodek konsoli.',
+    ptBR='O AAC, o aptX e o LDAC não podem ser usados agora. Cada um é oferecido cerca de 45 segundos depois que o console liga, quando passa na autoverificação, e não é oferecido de jeito nenhum se a verificação falhar ou se a última sessão terminar mal. Até lá, só o SBC, o codec padrão do console, é oferecido.',
+    tr="AAC, aptX ve LDAC şu anda kullanılamaz. Her biri, konsol açıldıktan yaklaşık 45 saniye sonra, başlangıç öz denetimi geçildiğinde sunulur; denetim başarısız olduysa veya son oturumu kötü bittiyse hiç sunulmaz. O zamana kadar yalnızca konsolun varsayılan codec'i olan SBC sunulur.")
+
+add('ROW_AACRATE',
+    ja='AACビットレート',
+    en='AAC Bit Rate',
+    fr='Débit AAC',
+    es='Tasa de bits de AAC',
+    de='AAC-Bitrate',
+    it='Bit rate AAC',
+    nl='AAC-bitrate',
+    ptPT='Débito de AAC',
+    ru='Битрейт AAC',
+    ko='AAC 비트레이트',
+    zhT='AAC 位元率',
+    zhS='AAC 码率',
+    fi='AAC-bittinopeus',
+    sv='AAC-bithastighet',
+    da='AAC-bithastighed',
+    no='AAC-bithastighet',
+    pl='Przepływność AAC',
+    ptBR='Taxa de bits do AAC',
+    tr='AAC bit hızı')
+
+add('ROW_AACACCEL',
+    ja='ハードウェアアクセラレーションAAC',
+    en='Hardware Accelerated AAC',
+    fr='AAC accéléré matériellement',
+    es='AAC con aceleración por hardware',
+    de='Hardwarebeschleunigtes AAC',
+    it='AAC con accelerazione hardware',
+    nl='Hardwaregeversnelde AAC',
+    ptPT='AAC com aceleração por hardware',
+    ru='Аппаратное ускорение AAC',
+    ko='AAC 하드웨어 가속',
+    zhT='AAC 硬體加速',
+    zhS='AAC 硬件加速',
+    fi='Laitteistokiihdytetty AAC',
+    sv='Hårdvaruaccelererad AAC',
+    da='Hardwareaccelereret AAC',
+    no='Maskinvareakselerert AAC',
+    pl='Sprzętowo przyspieszane AAC',
+    ptBR='AAC com aceleração por hardware',
+    tr='Donanım hızlandırmalı AAC')
+
+add('ROW_APTXHD',
+    ja='可能ならaptX HD',
+    en='aptX HD When Available',
+    fr='aptX HD si disponible',
+    es='aptX HD si está disponible',
+    de='aptX HD, wenn verfügbar',
+    it='aptX HD se disponibile',
+    nl='aptX HD indien beschikbaar',
+    ptPT='aptX HD quando disponível',
+    ru='aptX HD, если доступен',
+    ko='가능하면 aptX HD 사용',
+    zhT='可用時使用 aptX HD',
+    zhS='可用时使用 aptX HD',
+    fi='aptX HD, kun saatavilla',
+    sv='aptX HD när det finns',
+    da='aptX HD når det er muligt',
+    no='aptX HD når tilgjengelig',
+    pl='aptX HD, gdy dostępne',
+    ptBR='aptX HD quando disponível',
+    tr='Varsa aptX HD')
+
+# The Codec Settings sub-page, directly under Bluetooth Codec: the rows that belong to one codec (SBC Audio Quality, AAC Bit Rate, Hardware Accelerated AAC).
+add('ROW_CODECSET',
+    ja='コーデック設定',
+    en='Codec Settings',
+    fr='Paramètres du codec',
+    es='Ajustes del códec',
+    de='Codec-Einstellungen',
+    it='Impostazioni codec',
+    nl='Codec-instellingen',
+    ptPT='Definições do codec',
+    ru='Настройки кодека',
+    ko='코덱 설정',
+    zhT='編解碼器設定',
+    zhS='编解码器设置',
+    fi='Koodekin asetukset',
+    sv='Codec-inställningar',
+    da='Codec-indstillinger',
+    no='Kodekinnstillinger',
+    pl='Ustawienia kodeka',
+    ptBR='Configurações do codec',
+    tr='Codec ayarları')
+add('HINT_CODECSET',
+    ja='コーデックごとの設定です。「SBCオーディオ品質」、AACアドオンがある場合は「AACビットレート」と「ハードウェアアクセラレーションAAC」、LDACアドオンがある場合は「LDACビットレート」（すぐに反映されます）、aptXアドオンがある場合は「可能ならaptX HD」を設定できます。「LDACビットレート」以外は、変更を反映するため、ヘッドホンが一時的に再接続されます。',
+    en='The settings that belong to each codec: SBC Audio Quality; with the AAC add-on installed, AAC Bit Rate and Hardware Accelerated AAC; with the LDAC add-on, LDAC Bit Rate, which applies at once; with the aptX add-on, aptX HD When Available. The headphones reconnect briefly to apply a change to any of them except LDAC Bit Rate.',
+    fr='Les réglages propres à chaque codec : « Qualité audio SBC » ; avec le module complémentaire AAC, « Débit AAC » et « AAC accéléré matériellement » ; avec le module complémentaire LDAC, « Débit LDAC », appliqué aussitôt ; avec le module complémentaire aptX, « aptX HD si disponible ». Sauf pour « Débit LDAC », les écouteurs se reconnectent brièvement pour appliquer un changement.',
+    es='Los ajustes propios de cada códec: «Calidad de audio SBC»; con el complemento de AAC, «Tasa de bits de AAC» y «AAC con aceleración por hardware»; con el complemento de LDAC, «Tasa de bits de LDAC», que se aplica al instante; con el complemento de aptX, «aptX HD si está disponible». Salvo «Tasa de bits de LDAC», los auriculares se reconectan brevemente para aplicar un cambio.',
+    de='Die Einstellungen, die zu den einzelnen Codecs gehören: „SBC-Audioqualität“; mit dem AAC-Zusatzmodul „AAC-Bitrate“ und „Hardwarebeschleunigtes AAC“; mit dem LDAC-Zusatzmodul „LDAC-Bitrate“, die sofort gilt; mit dem aptX-Zusatzmodul „aptX HD, wenn verfügbar“. Außer bei „LDAC-Bitrate“ verbinden sich die Kopfhörer kurz neu, um eine Änderung zu übernehmen.',
+    it='Le impostazioni di ciascun codec: «Qualità audio SBC»; con il componente aggiuntivo AAC, «Bit rate AAC» e «AAC con accelerazione hardware»; con il componente aggiuntivo LDAC, «Bit rate LDAC», che si applica subito; con il componente aggiuntivo aptX, «aptX HD se disponibile». Tranne per «Bit rate LDAC», le cuffie si riconnettono brevemente per applicare una modifica.',
+    nl="De instellingen die bij elke codec horen: 'SBC-audiokwaliteit'; met de AAC-uitbreiding 'AAC-bitrate' en 'Hardwaregeversnelde AAC'; met de LDAC-uitbreiding 'LDAC-bitrate', die direct ingaat; met de aptX-uitbreiding 'aptX HD indien beschikbaar'. Behalve bij 'LDAC-bitrate' maken de koptelefoons kort opnieuw verbinding om een wijziging toe te passen.",
+    ptPT='As definições de cada codec: «Qualidade de áudio SBC»; com o extra de AAC, «Débito de AAC» e «AAC com aceleração por hardware»; com o extra de LDAC, «Débito de LDAC», que se aplica de imediato; com o extra de aptX, «aptX HD quando disponível». Exceto em «Débito de LDAC», os auscultadores voltam a ligar-se brevemente para aplicar uma alteração.',
+    ru='Настройки, относящиеся к каждому кодеку: «Качество звука SBC»; при установленном дополнении AAC — «Битрейт AAC» и «Аппаратное ускорение AAC»; при установленном дополнении LDAC — «Битрейт LDAC», он действует сразу; при установленном дополнении aptX — «aptX HD, если доступен». Кроме параметра «Битрейт LDAC», наушники ненадолго переподключаются, чтобы применить изменение.',
+    ko="코덱별 설정입니다. 'SBC 오디오 품질', AAC 추가 모듈이 있으면 'AAC 비트레이트'와 'AAC 하드웨어 가속', LDAC 추가 모듈이 있으면 'LDAC 비트레이트'(바로 적용됨), aptX 추가 모듈이 있으면 '가능하면 aptX HD 사용'을 설정할 수 있습니다. 'LDAC 비트레이트'를 제외하고는 변경 사항을 적용하기 위해 헤드폰이 잠시 다시 연결됩니다.",
+    zhT='各編解碼器專屬的設定：「SBC 音訊品質」；已安裝 AAC 附加模組時有「AAC 位元率」和「AAC 硬體加速」；已安裝 LDAC 附加模組時有「LDAC 位元率」（立即生效）；已安裝 aptX 附加模組時有「可用時使用 aptX HD」。除「LDAC 位元率」外，變更其他設定時耳機會短暫重新連線。',
+    zhS='各编解码器专属的设置：“SBC 音频质量”；已安装 AAC 附加模块时有“AAC 码率”和“AAC 硬件加速”；已安装 LDAC 附加模块时有“LDAC 码率”（立即生效）；已安装 aptX 附加模块时有“可用时使用 aptX HD”。除“LDAC 码率”外，更改其他设置时耳机会短暂重新连接。',
+    fi='Kunkin koodekin omat asetukset: ”SBC-äänenlaatu”; AAC-lisäosan kanssa ”AAC-bittinopeus” ja ”Laitteistokiihdytetty AAC”; LDAC-lisäosan kanssa ”LDAC-bittinopeus”, joka tulee voimaan heti; aptX-lisäosan kanssa ”aptX HD, kun saatavilla”. Kuulokkeet yhdistyvät hetkeksi uudelleen muutoksen käyttöön ottamiseksi, paitsi kun muutat asetusta ”LDAC-bittinopeus”.',
+    sv='Inställningarna för varje codec: ”SBC-ljudkvalitet”; med AAC-tillägget ”AAC-bithastighet” och ”Hårdvaruaccelererad AAC”; med LDAC-tillägget ”LDAC-bithastighet”, som gäller direkt; med aptX-tillägget ”aptX HD när det finns”. Utom för ”LDAC-bithastighet” ansluter hörlurarna kort på nytt för att tillämpa en ändring.',
+    da='Indstillingerne for hver codec: »SBC-lydkvalitet«; med AAC-tilføjelsesmodulet »AAC-bithastighed« og »Hardwareaccelereret AAC«; med LDAC-tilføjelsesmodulet »LDAC-bithastighed«, som gælder med det samme; med aptX-tilføjelsesmodulet »aptX HD når det er muligt«. Undtagen for »LDAC-bithastighed« forbindes hovedtelefonerne kort igen for at anvende en ændring.',
+    no='Innstillingene for hver kodek: «SBC-lydkvalitet»; med AAC-tillegget «AAC-bithastighet» og «Maskinvareakselerert AAC»; med LDAC-tillegget «LDAC-bithastighet», som gjelder med en gang; med aptX-tillegget «aptX HD når tilgjengelig». Unntatt «LDAC-bithastighet» kobles hodetelefonene kort til igjen for å bruke en endring.',
+    pl='Ustawienia każdego kodeka: „Jakość dźwięku SBC”; z dodatkiem AAC „Przepływność AAC” i „Sprzętowo przyspieszane AAC”; z dodatkiem LDAC „Przepływność LDAC”, która działa od razu; z dodatkiem aptX „aptX HD, gdy dostępne”. Poza ustawieniem „Przepływność LDAC” słuchawki na chwilę łączą się ponownie, aby zastosować zmianę.',
+    ptBR='As configurações de cada codec: "Qualidade de áudio SBC"; com o complemento do AAC, "Taxa de bits do AAC" e "AAC com aceleração por hardware"; com o complemento do LDAC, "Taxa de bits do LDAC", que vale na hora; com o complemento do aptX, "aptX HD quando disponível". Exceto "Taxa de bits do LDAC", os fones de ouvido se reconectam brevemente para aplicar uma mudança.',
+    tr='Her codec\'e ait ayarlar: "SBC ses kalitesi"; AAC eklentisiyle "AAC bit hızı" ve "Donanım hızlandırmalı AAC"; LDAC eklentisiyle hemen uygulanan "LDAC bit hızı"; aptX eklentisiyle "Varsa aptX HD". "LDAC bit hızı" dışında, bir değişikliği uygulamak için kulaklıklar kısa süreliğine yeniden bağlanır.')
+
+# Bluetooth Audio Quality becomes SBC Audio Quality (same key and values); the latency hint ends with what each codec adds.
+S['ROW_QUALITY'] = {
+    'ja': 'SBCオーディオ品質', 'en': 'SBC Audio Quality', 'fr': 'Qualité audio SBC', 'es': 'Calidad de audio SBC',
+    'de': 'SBC-Audioqualität', 'it': 'Qualità audio SBC', 'nl': 'SBC-audiokwaliteit', 'ptPT': 'Qualidade de áudio SBC',
+    'ru': 'Качество звука SBC', 'ko': 'SBC 오디오 품질', 'zhT': 'SBC 音訊品質', 'zhS': 'SBC 音频质量',
+    'fi': 'SBC-äänenlaatu', 'sv': 'SBC-ljudkvalitet', 'da': 'SBC-lydkvalitet', 'no': 'SBC-lydkvalitet',
+    'pl': 'Jakość dźwięku SBC', 'ptBR': 'Qualidade de áudio SBC', 'tr': 'SBC ses kalitesi'}
+NOTE_LATENCY = {
+    'ja': 'aptXによる遅延はほとんどなく、aptX HDとLDACは少し遅延します（LDACは約8〜19 ms）。AACは約55 msです。ゲームでは、aptXまたはSBCと「最小」の組み合わせが最も速く反応します。',
+    'en': 'aptX adds almost no delay; aptX HD and LDAC add some (LDAC about 8–19 ms); AAC adds about 55 ms. For games, aptX or SBC with Lowest is quickest.',
+    'fr': "aptX n'ajoute presque aucun délai ; aptX HD et LDAC en ajoutent un peu (LDAC environ 8 à 19 ms) ; AAC ajoute environ 55 ms. Pour les jeux, aptX ou SBC avec « La plus faible » réagit le plus vite.",
+    'es': 'aptX casi no añade retardo; aptX HD y LDAC añaden algo (LDAC unos 8–19 ms); AAC añade unos 55 ms. En los juegos, aptX o SBC con «La más baja» responde más rápido.',
+    'de': 'aptX fügt fast keine Verzögerung hinzu; aptX HD und LDAC fügen etwas hinzu (LDAC etwa 8–19 ms); AAC etwa 55 ms. Bei Spielen reagieren aptX oder SBC mit „Am niedrigsten“ am schnellsten.',
+    'it': "aptX non aggiunge quasi ritardo; aptX HD e LDAC ne aggiungono un po' (LDAC circa 8–19 ms); AAC circa 55 ms. Nei giochi, aptX o SBC con «La più bassa» sono i più reattivi.",
+    'nl': "aptX voegt vrijwel geen vertraging toe; aptX HD en LDAC voegen wat toe (LDAC ongeveer 8–19 ms); AAC ongeveer 55 ms. Bij games reageren aptX of SBC met 'Laagst' het snelst.",
+    'ptPT': 'O aptX quase não acrescenta atraso; o aptX HD e o LDAC acrescentam algum atraso (LDAC cerca de 8–19 ms); o AAC cerca de 55 ms. Nos jogos, o aptX ou o SBC com «A mais baixa» é o mais rápido.',
+    'ru': 'aptX почти не добавляет задержки; aptX HD и LDAC добавляют немного (LDAC около 8–19 ms); AAC около 55 ms. В играх быстрее всего отклик с aptX или SBC и значением «Минимальная».',
+    'ko': "aptX는 지연이 거의 없고, aptX HD와 LDAC는 약간의 지연이 더해집니다(LDAC는 약 8~19 ms). AAC는 약 55 ms가 더해집니다. 게임에서는 aptX 또는 SBC와 '가장 낮음' 조합이 가장 빠릅니다.",
+    'zhT': 'aptX 幾乎不增加延遲；aptX HD 與 LDAC 會增加一些（LDAC 約 8–19 ms）；AAC 約增加 55 ms。玩遊戲時，aptX 或 SBC 搭配「最低」反應最快。',
+    'zhS': 'aptX 几乎不增加延迟；aptX HD 和 LDAC 会增加一些（LDAC 约 8–19 ms）；AAC 约增加 55 ms。玩游戏时，aptX 或 SBC 搭配“最低”反应最快。',
+    'fi': 'aptX ei lisää viivettä juuri lainkaan; aptX HD ja LDAC lisäävät jonkin verran (LDAC noin 8–19 ms); AAC noin 55 ms. Peleissä aptX tai SBC ja Pienin reagoivat nopeimmin.',
+    'sv': 'aptX lägger knappt till någon fördröjning; aptX HD och LDAC lägger till en del (LDAC cirka 8–19 ms); AAC cirka 55 ms. I spel är aptX eller SBC med Lägst snabbast.',
+    'da': 'aptX lægger næsten ingen forsinkelse til; aptX HD og LDAC lægger lidt til (LDAC cirka 8–19 ms); AAC cirka 55 ms. I spil er aptX eller SBC med Lavest hurtigst.',
+    'no': 'aptX legger nesten ikke til forsinkelse; aptX HD og LDAC legger til noe (LDAC cirka 8–19 ms); AAC cirka 55 ms. I spill er aptX eller SBC med Lavest raskest.',
+    'pl': 'aptX prawie nie dodaje opóźnienia; aptX HD i LDAC dodają trochę (LDAC około 8–19 ms); AAC około 55 ms. W grach najszybciej reaguje aptX lub SBC z ustawieniem „Najniższe”.',
+    'ptBR': 'O aptX quase não acrescenta atraso; o aptX HD e o LDAC acrescentam algum atraso (LDAC cerca de 8–19 ms); o AAC cerca de 55 ms. Em jogos, o aptX ou o SBC com "A mais baixa" é o mais rápido.',
+    'tr': 'aptX neredeyse hiç gecikme eklemez; aptX HD ve LDAC biraz ekler (LDAC yaklaşık 8–19 ms); AAC yaklaşık 55 ms ekler. Oyunlarda aptX veya SBC ile En düşük en hızlı yanıt verir.'}
+for _l in LANGS:
+    if _l == 'enGB':
+        continue
+    _sep = '' if _l in ('ja', 'zhT', 'zhS') else ' '
+    S['HINT_LATENCY'][_l] = S['HINT_LATENCY'][_l] + _sep + NOTE_LATENCY[_l]
+
 # The low battery notification's text (shown by bluetoothturbo.suprx in the Home screen process, which keeps only these twenty
 # strings, none of the Settings page's): the phrase and the level in the number style, {n} where the number goes.
 N = {}
@@ -1140,15 +1462,139 @@ for _l in LANGS:
 
 
 
+# ---- 0.2.0: the rows on Sony's per-device Bluetooth page (Codec, Sample Rate, and the values) ----
+# Bluetooth Latency and Headset Battery reuse ROW_LATENCY and ROW_HEADSET, their values the items above (Standard, Low, Lowest, the level, Not Reported).
+# The values are templates, {n} and {m} where the figures go; "bitpool" is the codec's own term and stays as it is in every language.
+add('ROW_DV_CODEC',
+    ja='コーデック', en='Codec', fr='Codec', es='Códec', de='Codec', it='Codec', nl='Codec',
+    ptPT='Codec', ru='Кодек', ko='코덱', zhT='編解碼器', zhS='编解码器', fi='Koodekki', sv='Codec',
+    da='Codec', no='Kodek', pl='Kodek', ptBR='Codec', tr='Codec')
+add('ROW_DV_RATE',
+    ja='サンプリングレート', en='Sample Rate', fr="Fréquence d'échantillonnage", es='Frecuencia de muestreo',
+    de='Abtastrate', it='Frequenza di campionamento', nl='Samplefrequentie', ptPT='Taxa de amostragem',
+    ru='Частота дискретизации', ko='샘플링 속도', zhT='取樣率', zhS='采样率', fi='Näytteenottotaajuus',
+    sv='Samplingsfrekvens', da='Samplingfrekvens', no='Samplingfrekvens', pl='Częstotliwość próbkowania',
+    ptBR='Taxa de amostragem', tr='Örnekleme hızı')
+add('DV_AAC', **{l: 'AAC, {n} kb/s' for l in LANGS})
+add('DV_APTX', **{l: 'aptX, {n} kb/s' for l in LANGS})
+add('DV_LDAC', **{l: 'LDAC, {n} kb/s' for l in LANGS})
+add('DV_APTX_HD', **{l: 'aptX HD, {n} kb/s' for l in LANGS})
+add('DV_SBC', **{l: 'SBC, bitpool {n}, {m}' for l in LANGS})
+add('DV_KHZ', **{l: '{n} kHz' for l in LANGS})
+# The sample rate's decimal separator, and the template of the one-line fallback title ({n} the row's name, {m} its value).
+_COMMA = ('fr', 'es', 'de', 'it', 'nl', 'ptPT', 'ptBR', 'ru', 'fi', 'sv', 'da', 'no', 'pl', 'tr')
+add('DV_DECIMAL', **{l: ',' if l in _COMMA else '.' for l in LANGS})
+add('DV_LINE', **{l: '{n}：{m}' if l in ('ja', 'zhT', 'zhS') else '{n} : {m}' if l == 'fr' else '{n}: {m}' for l in LANGS})
+# 0.3.0: the Headset Codecs row on the device page. The codec names stay as they are in every language; the row's words are the title and four
+# templates ({n} the codec's name). "Add-on" is the term for the optional modules.
+add('ROW_DV_HCODECS',
+    ja='ヘッドセットのコーデック', en='Headset Codecs', fr='Codecs des écouteurs', es='Códecs de los auriculares', de='Headset-Codecs',
+    it='Codec delle cuffie', nl='Headsetcodecs', ptPT='Codecs dos auscultadores', ru='Кодеки гарнитуры', ko='헤드셋 코덱',
+    zhT='耳機編解碼器', zhS='耳机编解码器', fi='Kuulokkeiden koodekit', sv='Hörlurarnas codecs', da='Headsettets codecs',
+    no='Kodeker for headset', pl='Kodeki słuchawek', ptBR='Codecs do headset', tr='Kulaklık codec\'leri')
+add('DV_HC_ADDON',
+    ja='{n}（アドオンあり）', en='{n} (add-on available)', fr='{n} (module complémentaire disponible)', es='{n} (complemento disponible)',
+    de='{n} (Zusatzmodul verfügbar)', it='{n} (componente aggiuntivo disponibile)', nl='{n} (uitbreiding beschikbaar)', ptPT='{n} (extra disponível)',
+    ru='{n} (доступно дополнение)', ko='{n} (추가 모듈 사용 가능)', zhT='{n}（可用附加模組）', zhS='{n}（可用附加模块）',
+    fi='{n} (lisäosa saatavilla)', sv='{n} (tillägg tillgängligt)', da='{n} (tilføjelsesmodul tilgængeligt)', no='{n} (tillegg tilgjengelig)',
+    pl='{n} (dodatek dostępny)', ptBR='{n} (complemento disponível)', tr='{n} (eklenti kullanılabilir)')
+add('DV_HC_UNSUPPORTED',
+    ja='{n}（非対応）', en='{n} (unsupported)', fr='{n} (non pris en charge)', es='{n} (no compatible)', de='{n} (nicht unterstützt)',
+    it='{n} (non supportato)', nl='{n} (niet ondersteund)', ptPT='{n} (não suportado)', ru='{n} (не поддерживается)', ko='{n} (지원 안 함)',
+    zhT='{n}（不支援）', zhS='{n}（不支持）', fi='{n} (ei tuettu)', sv='{n} (stöds inte)', da='{n} (understøttes ikke)', no='{n} (støttes ikke)',
+    pl='{n} (nieobsługiwany)', ptBR='{n} (não compatível)', tr='{n} (desteklenmiyor)')
+add('DV_HC_OTHER',
+    ja='その他', en='Other', fr='Autre', es='Otro', de='Andere', it='Altro', nl='Overig', ptPT='Outro', ru='Другой', ko='기타',
+    zhT='其他', zhS='其他', fi='Muu', sv='Annat', da='Andet', no='Annet', pl='Inne', ptBR='Outro', tr='Diğer')
+add('DV_HC_UNKNOWN',
+    ja='まだ不明', en='Not Known Yet', fr='Pas encore connu', es='Aún no se conoce', de='Noch nicht bekannt', it='Non ancora noto',
+    nl='Nog niet bekend', ptPT='Ainda não conhecido', ru='Пока неизвестно', ko='아직 알 수 없음', zhT='尚未得知', zhS='尚未获知',
+    fi='Ei vielä tiedossa', sv='Inte känt än', da='Ikke kendt endnu', no='Ikke kjent ennå', pl='Jeszcze nieznane', ptBR='Ainda não conhecido', tr='Henüz bilinmiyor')
+# 0.2.0: the Signal row on the device page: the row's title and its five values (the radio link as a word; "Measuring…" for the few seconds after a connection).
+add('ROW_DV_SIGNAL',
+    ja='信号強度', en='Signal', fr='Signal', es='Señal', de='Signal', it='Segnale', nl='Signaal', ptPT='Sinal', ru='Сигнал', ko='신호',
+    zhT='訊號', zhS='信号', fi='Signaali', sv='Signal', da='Signal', no='Signal', pl='Sygnał', ptBR='Sinal', tr='Sinyal')
+add('DV_SIG_EXCELLENT',
+    ja='非常に良い', en='Excellent', fr='Excellent', es='Excelente', de='Sehr gut', it='Ottimo', nl='Uitstekend', ptPT='Excelente', ru='Отличный', ko='매우 좋음',
+    zhT='極佳', zhS='极佳', fi='Erinomainen', sv='Utmärkt', da='Fremragende', no='Utmerket', pl='Doskonały', ptBR='Excelente', tr='Mükemmel')
+add('DV_SIG_GOOD',
+    ja='良好', en='Good', fr='Bon', es='Buena', de='Gut', it='Buono', nl='Goed', ptPT='Bom', ru='Хороший', ko='좋음',
+    zhT='良好', zhS='良好', fi='Hyvä', sv='Bra', da='Godt', no='Godt', pl='Dobry', ptBR='Bom', tr='İyi')
+add('DV_SIG_FAIR',
+    ja='普通', en='Fair', fr='Moyen', es='Regular', de='Mittel', it='Discreto', nl='Redelijk', ptPT='Razoável', ru='Средний', ko='보통',
+    zhT='普通', zhS='一般', fi='Kohtalainen', sv='Måttlig', da='Middel', no='Middels', pl='Średni', ptBR='Razoável', tr='Orta')
+add('DV_SIG_WEAK',
+    ja='弱い', en='Weak', fr='Faible', es='Débil', de='Schwach', it='Debole', nl='Zwak', ptPT='Fraco', ru='Слабый', ko='약함',
+    zhT='微弱', zhS='微弱', fi='Heikko', sv='Svag', da='Svagt', no='Svakt', pl='Słaby', ptBR='Fraco', tr='Zayıf')
+add('DV_SIG_MEASURING',
+    ja='測定中…', en='Measuring…', fr='Mesure en cours…', es='Midiendo…', de='Wird gemessen…', it='Misurazione…', nl='Meten…', ptPT='A medir…', ru='Измерение…', ko='측정 중…',
+    zhT='測量中…', zhS='测量中…', fi='Mitataan…', sv='Mäter…', da='Måler…', no='Måler…', pl='Pomiar…', ptBR='Medindo…', tr='Ölçülüyor…')
+add('DV_HC_SEP', **{l: '、' if l in ('ja', 'zhT', 'zhS') else ', ' for l in LANGS})
+# The Refresh Codecs button on the device page (shown only while the headphones' list is not known): its title and its help text.
+add('ROW_DV_REFRESH',
+    ja='コーデックを再取得',
+    en='Refresh Codecs',
+    fr='Actualiser les codecs',
+    es='Actualizar códecs',
+    de='Codecs aktualisieren',
+    it='Aggiorna codec',
+    nl='Codecs vernieuwen',
+    ptPT='Atualizar codecs',
+    ru='Обновить кодеки',
+    ko='코덱 새로 고침',
+    zhT='重新整理編解碼器',
+    zhS='刷新编解码器',
+    fi='Päivitä koodekit',
+    sv='Uppdatera codecs',
+    da='Opdater codecs',
+    no='Oppdater kodeker',
+    pl='Odśwież kodeki',
+    ptBR='Atualizar codecs',
+    tr="Codec'leri yenile")
+add('HINT_DV_REFRESH',
+    ja='ヘッドホンが一時的に再接続され、Vitaがそのコーデックを読み取ります。',
+    en='The headphones reconnect briefly so the Vita can read their codecs.',
+    fr='Les écouteurs se reconnectent brièvement pour que la Vita puisse lire leurs codecs.',
+    es='Los auriculares se reconectan brevemente para que la Vita pueda leer sus códecs.',
+    de='Die Kopfhörer verbinden sich kurz neu, damit die Vita ihre Codecs auslesen kann.',
+    it='Le cuffie si riconnettono brevemente così la Vita può leggerne i codec.',
+    nl='De koptelefoons maken kort opnieuw verbinding zodat de Vita hun codecs kan uitlezen.',
+    ptPT='Os auscultadores voltam a ligar-se brevemente para que a Vita possa ler os seus codecs.',
+    ru='Наушники ненадолго переподключаются, чтобы Vita смогла прочитать их кодеки.',
+    ko='헤드폰이 잠시 다시 연결되어 Vita가 코덱을 읽을 수 있습니다.',
+    zhT='耳機會短暫重新連線，讓 Vita 讀取其編解碼器。',
+    zhS='耳机会短暂重新连接，让 Vita 读取其编解码器。',
+    fi='Kuulokkeet yhdistyvät hetkeksi uudelleen, jotta Vita voi lukea niiden koodekit.',
+    sv='Hörlurarna ansluter kort på nytt så att Vita kan läsa av deras codecs.',
+    da='Hovedtelefonerne forbindes kort igen, så Vita kan læse deres codecs.',
+    no='Hodetelefonene kobles kort til igjen slik at Vita kan lese kodekene deres.',
+    pl='Słuchawki na chwilę łączą się ponownie, aby Vita mogła odczytać ich kodeki.',
+    ptBR='Os fones de ouvido se reconectam brevemente para que o Vita possa ler os codecs deles.',
+    tr="Vita'nın codec'lerini okuyabilmesi için kulaklıklar kısa süreliğine yeniden bağlanır.")
+add('ITEM_DV_DUAL',
+    ja='デュアルチャンネル', en='Dual Channel', fr='Double canal', es='Canal doble', de='Zweikanal',
+    it='Doppio canale', nl='Dubbel kanaal', ptPT='Canal duplo', ru='Двойной канал', ko='듀얼 채널',
+    zhT='雙聲道', zhS='双声道', fi='Kaksikanavainen', sv='Dubbelkanal', da='Dobbeltkanal',
+    no='Dobbeltkanal', pl='Podwójny kanał', ptBR='Canal duplo', tr='Çift kanal')
+add('ITEM_DV_JOINT',
+    ja='ジョイントステレオ', en='Joint Stereo', fr='Stéréo conjointe', es='Estéreo conjunto', de='Joint-Stereo',
+    it='Stereo congiunto', nl='Joint stereo', ptPT='Estéreo conjunto', ru='Объединённое стерео', ko='조인트 스테레오',
+    zhT='聯合立體聲', zhS='联合立体声', fi='Yhteisstereo', sv='Joint stereo', da='Joint stereo',
+    no='Joint stereo', pl='Stereo łączone', ptBR='Estéreo conjunto', tr='Birleşik stereo')
+
+# ---- 0.2.0: the codec help page, the list-style hints of Codec Settings, the fallback notification (tools/gen_i18n_codec.py) ----
+FB = gen_i18n_codec.install(S, LANGS, HINT_LINES)   # the fallback notification's two texts per language, for the kernel module's table
+
+
 def cstr(s):
-    return '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return '"' + s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n') + '"'
 
 
 # The Settings module decodes a text into a buffer of this many 16-bit units (settings_app/bluetoothturbo_settings.c).
 MAX_UNITS = 760
 
 # English row names and list items are Title Case, as the system's own rows are; hints are not.
-SMALL_WORDS = {'a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with'}
+SMALL_WORDS = {'a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with', 'kb/s'}
 
 
 def title_case_problems(sid, text):
@@ -1159,7 +1605,7 @@ def title_case_problems(sid, text):
     for i, w in enumerate(words):
         if i and w in SMALL_WORDS:
             continue
-        if w[0].isalpha() and not w[0].isupper():
+        if w[0].isalpha() and not w[0].isupper() and not w.startswith('aptX'):   # the codec's own spelling
             bad.append('%s: "%s" is not Title Case in English' % (sid, text))
             break
     return bad
@@ -1185,6 +1631,26 @@ def problems():
         ph = {l: re.findall(r'%[-+#0-9.]*[a-zA-Z]', t.get(l, t.get('en', ''))) for l in LANGS}
         if any(ph[l] != ph['en'] for l in LANGS if l in t):
             bad.append(f'{sid}: placeholders differ between languages')
+        br = {l: sorted(re.findall(r'\{[a-z]\}', t.get(l, t.get('en', '')))) for l in LANGS}
+        if any(br[l] != br['en'] for l in LANGS if l in t):
+            bad.append(f'{sid}: {{n}}-style placeholders differ between languages')
+    # the hints in the form that is not in use must fit as well (the switch can be turned over at any time)
+    other = 'semicolon' if HINT_LINES == 'newline' else 'newline'
+    for l in LANGS:
+        if l == 'enGB':
+            continue
+        for sid, text in gen_i18n_codec.hints(S, l, other).items():
+            if len(text) > MAX_UNITS:
+                bad.append(f'{sid}: {l} is longer than {MAX_UNITS} characters in the "{other}" form')
+        for sid in ('HINT_QUALITY', 'HINT_AACRATE', 'HINT_LDACRATE', 'HINT_APTXHD', 'HINT_AACACCEL'):
+            if (HINT_LINES == 'newline') != ('\n' in S[sid][l]):
+                bad.append(f'{sid}: {l} is not in the "{HINT_LINES}" form')
+        for k, name in enumerate(('doesn\'t support', 'couldn\'t use')):
+            t = FB[l][k]
+            if t.count('{c}') != 1 or '%' in t or '\n' in t:
+                bad.append(f'fallback notice {l} ({name}): the text must hold {{c}} once and nothing else to substitute: {t!r}')
+            if len(t.replace('{c}', 'aptX HD').encode('utf-16-le')) // 2 > 63:
+                bad.append(f'fallback notice {l} ({name}): longer than 63 UTF-16 units with the longest codec name')
     for l in LANGS:
         if l != 'enGB':
             t = N.get(l, '')
@@ -1215,15 +1681,24 @@ def render():
     nl += ['\t' + cstr(N['en'] if l == 'enGB' else N[l]) + ',' for l in LANGS]
     nl.append('};')
     out['user/bluetoothturbo_notice_table.h'] = '\n'.join(nl) + '\n'
+    # the kernel module's table: the codec fallback notification, two texts per language ({c} is the codec's name), the same language order
+    kl = head[:1] + ['/* The codec fallback notification, per system language: ja en-US fr es de it nl pt-PT ru ko zh-T zh-S fi sv da no pl pt-BR en-GB tr. */',
+                     '/* Each row: the headphones do not offer the codec, the headphones could not use it. {c} is where the codec\'s name goes. */', '',
+                     'static const char *const g_fallback_text[20][2] = {']
+    for l in LANGS:
+        a, b = FB['en'] if l == 'enGB' else FB[l]
+        kl.append('\t{ ' + cstr(a) + ', ' + cstr(b) + ' },')
+    kl.append('};')
+    out['kernel/bluetoothturbo_fallback_table.h'] = '\n'.join(kl) + '\n'
     return out
 
 
 def main(argv):
     check = '--check' in argv
     args = [a for a in argv if a != '--check']
-    if len(args) not in (1, 2):
+    if len(args) not in (1, 2, 3):
         raise SystemExit(__doc__)
-    outdirs = {'settings': args[0], 'user': args[1] if len(args) == 2 else None}
+    outdirs = {'settings': args[0], 'user': args[1] if len(args) >= 2 else None, 'kernel': args[2] if len(args) == 3 else None}
     bad = problems()
     if bad:
         raise SystemExit('\n'.join(bad))
@@ -1233,6 +1708,9 @@ def main(argv):
         if name.startswith('user/'):
             if outdirs['user'] is not None:
                 paths[f"{outdirs['user']}/{name[5:]}"] = text
+        elif name.startswith('kernel/'):
+            if outdirs['kernel'] is not None:
+                paths[f"{outdirs['kernel']}/{name[7:]}"] = text
         else:
             paths[f"{outdirs['settings']}/{name}"] = text
     if check:
@@ -1247,7 +1725,7 @@ def main(argv):
         return
     for path, text in paths.items():
         open(path, 'w', encoding='utf-8').write(text)
-    print(f'{len(S)} strings x {len(LANGS)} languages -> {args[0]}' + (f', notice table -> {args[1]}' if len(args) == 2 else ''))
+    print(f'{len(S)} strings x {len(LANGS)} languages -> {args[0]}' + (f', notice table -> {args[1]}' if len(args) >= 2 else '') + (f', fallback table -> {args[2]}' if len(args) == 3 else ''))
 
 
 if __name__ == '__main__':

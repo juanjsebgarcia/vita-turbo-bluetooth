@@ -5,6 +5,8 @@
  * no floating point, no vector instructions. The one call it makes besides the original
  * routine is the cheap microsecond clock (a timer read).
  *
+ * With AAC streaming on (btaac_hook.h) the block is also handed, after the filter, to the AAC engine's ring (a leaf call through the AAC module's table).
+ *
  * The block's memory is read after only a null and alignment check: it is the audio sender's own
  * buffer, which the original routine reads at the same point, so no further page check is made.
  *
@@ -20,6 +22,7 @@
 #include <taihen.h>
 
 #include "bteq_hook.h"
+#include "btaac_hook.h"
 
 #define REF_SPINS   200000u   /* loads, no system call: about a millisecond at most */
 #define BAD_LENGTH  0x802F0D07   /* what the original returns for a block it does not accept */
@@ -46,6 +49,7 @@ int bteq_hook(uint32_t addr_lo, uint32_t addr_hi, const void *buf, uint32_t len)
 		const int16_t *out = bq_process(&bteq_eq, (const int16_t *)buf, ksceKernelGetSystemTimeLow());
 		if (out)
 			buf = out;
+		btaac_pcm_block((const int16_t *)buf);   /* AAC streaming: the block, as it goes on, to the engine (only while the stream is AAC and running) */
 	}
 	int ret = TAI_CONTINUE(int, ref, addr_lo, addr_hi, buf, len);
 	bteq_inside = 0;

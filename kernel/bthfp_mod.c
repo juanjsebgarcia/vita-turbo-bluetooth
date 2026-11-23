@@ -196,6 +196,7 @@ static SceUID g_tab_uid[HFP_NSITES];       /* the 14 injects of the table move (
 static int g_tab_in, g_tab_failed, g_tab_looked;
 static int g_hfp_mode;                    /* the mode in force: 0, 1, 2, 3 or 4                    */
 static uint32_t g_hfp_seen_seq;           /* the report sequence word the worker has taken up to   */
+static int g_hfp_link_prev = -1;          /* the sound link as the last pass saw it (-1 not known)                  */
 static uint32_t g_hfp_last_level = 1000;  /* the level logged last (none yet)                      */
 
 /* ---- the table move ---------------------------------------------------------------------- */
@@ -320,21 +321,21 @@ static int hfp_link(void)
 	return (*(const volatile uint32_t *)(b + AV_DEVBITS) & HFP_AV_BT_BITS) ? 1 : 0;
 }
 
-/* Takes up the newest report the hook published, if the worker has not yet. */
-static void hfp_drain(uint64_t now)
+/* Takes up the newest report the hook published, if the worker has not yet. 1 when one was taken up. */
+static int hfp_drain(uint64_t now)
 {
 	uint32_t s1 = __atomic_load_n(&bthfp_seq, __ATOMIC_ACQUIRE), s2, level, source, t_us;
 	uint64_t arrived;
 
 	if ((s1 & 1) || s1 == g_hfp_seen_seq)
-		return;
+		return 0;
 	level = bthfp_level;
 	source = bthfp_source;
 	t_us = bthfp_t_us;
 	__atomic_thread_fence(__ATOMIC_ACQUIRE);
 	s2 = bthfp_seq;
 	if (s2 != s1)
-		return;                       /* being written: the next pass */
+		return 0;                     /* being written: the next pass */
 	g_hfp_seen_seq = s1;
 	/* when it arrived: now, less the (wrapped) difference of the low clock words, good for 71 minutes */
 	arrived = now - (uint64_t)(uint32_t)(ksceKernelGetSystemTimeLow() - t_us);
@@ -345,13 +346,14 @@ static void hfp_drain(uint64_t now)
 		BTT_KLOG("bluetooth hfp: the headset reported %u %% (%s)", (unsigned)level,
 		         source == BTT_BATT_SRC_HFIND ? "hands-free indicator" : "vendor command");
 	}
+	return 1;
 }
 
 /* Once per worker pass, after the start-up period: bring the mode in force to `mode`. */
 void btt_hfp_sync(int mode)
 {
 	uint64_t now = ksceKernelGetSystemTimeWide();
-	int hooked, link;
+	int hooked, link, drained;
 
 	if (mode < 0 || mode > 4)
 		mode = 0;
@@ -362,6 +364,7 @@ void btt_hfp_sync(int mode)
 			hfp_tab_release(0);
 			btt_batt_reset();
 			g_hfp_last_level = 1000;
+			g_hfp_link_prev = -1;
 		}
 		hfp_tab_release(0);             /* a release that could not take the lock last pass */
 		hfp_mic_release(0);
@@ -399,10 +402,18 @@ void btt_hfp_sync(int mode)
 	} else {
 		hfp_conn_reset(&g_hc);
 	}
-	hfp_drain(now);
+	drained = hfp_drain(now);
 	link = hfp_link();
-	if (link >= 0)
+	if (link >= 0) {
+		/* The headphones came back (the sound link went from down to up): a level kept from before is not theirs to show as live, since a connection the headset
+		 * has not yet reported on says nothing; the page says Not Reported until it does. A report taken up in this very pass is the new link's own. */
+		if (link == 1 && g_hfp_link_prev == 0 && !drained) {
+			btt_batt_reset();
+			g_hfp_last_level = 1000;
+		}
+		g_hfp_link_prev = link;
 		btt_batt_link(link, now);
+	}
 }
 
 /* Module stop (and the one place that undoes everything): answers off, table back, hook out, level forgotten. */
@@ -413,6 +424,7 @@ void btt_hfp_restore(void)
 	hfp_tab_release(1);
 	hfp_conn_reset(&g_hc);
 	btt_batt_reset();
+	g_hfp_link_prev = -1;
 	g_hfp_mode = 0;
 	hook_release();
 }

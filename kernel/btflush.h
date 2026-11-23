@@ -12,7 +12,12 @@
  * cleared when it stops. */
 void btt_btflush_sync(int lowest);
 
-/* Module stop: the three hooks out. */
+/* The event handler's hook alone, for the link log (btevlog.c): 1 if it is in after this call. With `want` set it goes in the first time (the site checked byte for byte
+ * first; when the code cannot be read yet it is asked again on the next call, when it is not the code this module knows it is not tried again); it stays in, passing through,
+ * until module stop. The same hook serves the Lowest guard: whichever is wanted first puts it in, the other finds it there. */
+int btt_btflush_evt_sync(int want);
+
+/* Module stop: the hooks out. */
 void btt_btflush_restore(void);
 
 #endif

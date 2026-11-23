@@ -29,6 +29,7 @@ typedef uint64_t SceUInt64;
 typedef int (*SceKernelThreadEntry)(SceSize args, void *argp);
 typedef int (*SceSysEventHandler)(int resume, int eventid, void *args, void *opt);
 typedef int SceSSize;
+typedef int SceInt32Host;
 
 SceUID ksceIoOpen(const char *path, int flags, int mode);
 int    ksceIoRead(SceUID fd, void *buf, SceSize n);
@@ -49,6 +50,25 @@ int    ksceKernelWaitThreadEnd(SceUID th, int *res, SceUInt *timeout);
 int    ksceKernelDeleteThread(SceUID th);
 int    ksceKernelChangeThreadPriority(SceUID thid, int priority);
 int    ksceKernelRegisterSysEventHandler(const char *name, SceSysEventHandler handler, void *args);
+/* the thread manager's list and a thread's information (the AAC engine reads the audio sender's priority); only the fields the engine reads */
+typedef struct SceKernelThreadInfo {
+	SceSize  size;
+	SceUID   processId;
+	char     name[32];
+	SceInt32Host currentPriority;
+	uint64_t runClocks;
+	uint32_t intrPreemptCount, threadPreemptCount;
+} SceKernelThreadInfo;
+int    ksceKernelGetThreadIdList(SceUID pid, SceUID *ids, int n, int *copy_count);
+int    ksceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info);
+int    ksceKernelGetThreadCurrentPriority(void);
+/* kernel memory blocks, a sleep and the core number (the AAC engine's encoder block and thread) */
+#define SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW  0x1020D006
+SceUID ksceKernelAllocMemBlock(const char *name, unsigned type, unsigned size, void *opt);
+int    ksceKernelFreeMemBlock(SceUID uid);
+int    ksceKernelGetMemBlockBase(SceUID uid, void **base);
+int    ksceKernelDelayThread(SceUInt delay);
+int    ksceKernelCpuId(void);
 /* the system's checked copies between the caller's memory and the kernel's (macros in the SDK) */
 int    ksceKernelMemcpyKernelToUser(void *dst, const void *src, size_t len);
 int    ksceKernelMemcpyUserToKernel(void *dst, const void *src, size_t len);

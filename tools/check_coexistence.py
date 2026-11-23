@@ -32,9 +32,12 @@ SKIP = {"bteq_table.h"}   # generated numbers, all decimal tables
 
 # Quoted module names each part may use.
 ALLOWED_MODULES = {
-    "kernel": {"SceBt", "SceAVConfig", "SceShell", "SceSysmem", "SceKernelModulemgr"},
+    # "SceAVConfigDataSend" is a thread's name, not a module's: the AAC engine reads that thread's priority (the thread manager's list: read only) to run just below it
+    "kernel": {"SceBt", "SceAVConfig", "SceAVConfigDataSend", "SceShell", "SceSysmem", "SceKernelModulemgr"},
     "include": set(),
-    "settings_app": {"SceSettings", "SceSystemSettingsCore"},
+    # "ScePaf": the Settings process's own widget library, asked for its allocator (the rows on a Bluetooth device's page store text in the page's
+    # string objects, which free with it)
+    "settings_app": {"SceSettings", "SceSystemSettingsCore", "ScePaf"},
     "user": set(),
 }
 
@@ -63,15 +66,48 @@ ALLOWED_HEX = {
         0xF68, 0xF70, 0x12DC, 0x12E2,                      # SceAVConfig: the disconnect changes and their windows
         0x1EFA4, 0x1EFA8,                                  # SceBt: the name text and its window
         0x8D47CABD, 0x6059113A, 0xE9936446, 0x94C66A3B,    # SceBtForDriver: start sound, connect, state, configuration
+        0x50710281,                                        # SceBtForDriver: disconnect (btcall.c: the settings that apply at once)
+        0x2C9DD7BB,                                        # SceBtForDriver: the information call for a device, read only (btcall.c: link quality and signal strength, for the Signal row and bttGetLinkInfo)
+        0x802F0204, 0x802F0203, 0x802F020E,                # SceBt's answers to a connect that means "not now": driver busy, a link exists or is being made (btapply_core.h asks again)
         0x802F0D01, 0xFFFF, 0x7FFFFFFF,
         0x05093E7B, 0x2ED7F97A, 0x67AAB627, 0xD4A60A52, 0x5182E212,
         0x0552F692, 0x532155E5, 0xBB4B0A3E, 0x5549BF1F, 0x34B4D82E, 0x12DAC0F3,
         0x0703C828, 0x2053B5A5, 0xF476E785, 0x939FFBE9, 0x734D476A, 0x51CB6207,
+        # AAC streaming (btaac_gate_data.h, btaac_hook.*, btaac_stream.c, btlink.c): SceBt's signalling receive routine and its windows, the media packet
+        # send routine, the frame sender, the SET_CONFIGURATION format and the call site of the code's own send of it (0xA988); where a link slot keeps the
+        # endpoint list, its index, the source stream record, the media channel and the profile bits; the link table and the A2DP stream's words in the
+        # data segment (the headset battery code reads the same table); the error the send routine returns when it cannot send;
+        # the AudioSpecificConfig (AAC LC, 48 kHz, stereo) and the page mask of the translation check; the stream's RTP stream number base.
+        0x9F4C, 0x9F58, 0x9F8E, 0xA2B0, 0xA912, 0xAD6C, 0xAD8C, 0x109EC, 0x109FA, 0x1EDD8, 0xA988,
+        0x3B35, 0x3B46, 0x3B70, 0x3B8C, 0x3E1C, 0x104A8, 0x36528, 0x3652C, 0x37AF4,
+        0x802F0508, 0x1190, 0xFFF, 0x56544100,
+        # stage 2b: the windows the acceptor path and the in-flight count rely on, compared by a hash (btaac_gate_data.h)
+        #: their offsets, lengths, the offsets of the loader's address loads inside them, their hashes, the two frame
+        # formats the replies use; the power-down events the standby handler tells apart (cancelled, point of no return).
+        0x3FE8, 0x7674, 0x107E0, 0x10A5A, 0xA356, 0xA40A, 0xA702, 0xA990, 0xAA8C, 0x1EDC0, 0x1EDCC, 0x1EDE0,
+        0x32, 0x16, 0xC8, 0x68, 0x34, 0x244, 0x40, 0xCC, 0x9E, 0x30,
+        0x28, 0x64, 0x6C, 0xB8, 0xC4, 0xCE, 0x172, 0x176, 0x180, 0x1D8, 0x1DE, 0x1E8, 0x1F6, 0x10, 0x1A, 0x2E, 0x26, 0x86, 0x8C,
+        0xA1D1E9E9, 0x35B72C9B, 0x095BE6F4, 0xAE473105, 0xA01860EF, 0xA58D9024, 0xEC6C8BE4, 0x74C06E56, 0x374BDFD2, 0xA01D42CB,
+        0x101, 0x102, 0x20F,
+        # the START retry and the watchdog (kernel/btaac_stream.c, btaac_hook.h): the link slot's "starting" word (bit 3), the
+        # parked request, the voice bit; SceBt's START reject handler, ksceBtStartAudio's body and the START and SUSPEND senders (hashed windows: offsets, lengths, the
+        # offsets of the loader's address loads inside them, hashes); the retry's raised priority
+        0x3E18, 0x3E24, 0x20000000, 0xA64E, 0x70D8, 0xAC0C, 0x3E, 0xF0, 0x160,
+        0x2054CFD3, 0x6445E8D0, 0xA0C65D6D,
+        0x74, 0x76, 0x7A, 0x7C, 0x90, 0x94, 0xA4, 0xA8, 0xAC, 0xAE, 0xB0, 0xB2, 0xD4, 0xD8, 0xE6, 0xEA, 0x13E, 0x146, 0x156, 0x15A,
     },
     "include": set(),
     "settings_app": {
         0x00040000, 0x00200001, 0x16DDF3DC, 0x19CEFDA7, 0x19FE55A8, 0x2DCC4AFA, 0x3D643CE8,
         0x4D9A9DD0, 0x58421DD1, 0x41D320C5, 0xC436F916, 0xCAE9ACE6, 0xD72EA399, 0xE188382F,
+        # the settings core's own enable and grey-out calls for a row by id (the greying of the AAC rows)
+        0xF832D8FB, 0x9D058B17,
+        # and its call that removes or adds a row by id (the Headset Battery row is shown again when Read Headset Battery changes)
+        0x84029629,
+        # the rows on a Bluetooth device's page (settings_app/bluetoothturbo_devrows.h): the import SceSettings makes to set a plugin's functions (hooked to
+        # wrap two of the Bluetooth plugin's), the widget library's allocator (library and function numbers), the range a user address must lie in to be
+        # used as that function, and the mask of a device address's high 16 bits
+        0xF5354FEF, 0xA7D28DAE, 0xFC5CD359, 0x80000000, 0xF0000000, 0xFFFF,
     },
 }
 
@@ -103,6 +139,30 @@ ALLOWED_HEX["kernel"] |= {
         # (kernel/bthfp_mod.c): each routine's first bytes, with the loader's address loads left out, hashed
         0x00E4F8CA71592B06, 0x2E264870FFCCB156, 0x25604197563D82FF, 0x325EBCF134FA557A, 0xCD799887026F71BE, 0x4B3DFFAF3C45CF83
 }
+
+# The AAC engine (kernel/btaac*.c, btaac_core.h): the system core's thread affinity mask (the engine's thread is the only one pinned there),
+# its stack size (the encoder's deepest path is about 3 KB), and the two multipliers of the integer hash that makes the test signals'
+# noise. None is an address, a library or function number or a register: the engine touches no other driver.
+ALLOWED_HEX["kernel"] |= {0x80000, 0x4000, 0x7FEB352D, 0x846CA68B}
+# The number of the AAC module's one export, btaacGetApi, which the main module looks up in our own optional module (kernel/btaac_api.h): the
+# number the build gives that name, checked against the build by tools/check_aac_nid.py. It names nothing of any other driver.
+ALLOWED_HEX["kernel"] |= {0x5CFD5B5F}
+# The aptX module (kernel/btaptx*.[ch], btaptx_sep.h): the number of its one export, btaptxGetApi (kernel/btaptx_api.h, checked against the build by tools/check_aac_nid.py), the
+# FNV-1a hash the self-test compares the encoder's bytes with (made on the host by an independent encoder: kernel/btaptx_core.h), and the codec's vendor id as the Bluetooth
+# specification's capability element carries it (a protocol number: kernel/btaptx_sep.h). None is an address, a library or function number of another driver.
+ALLOWED_HEX["kernel"] |= {0x144737D5, 0xDB97AFEC90714FAE, 0x4F, 0x48401DD4901DF60D, 0xD7, 0x24}   # aptX: the add-on's export, the self-tests' hashes, the vendor and codec ids (classic 0x4F, HD 0xD7 and 0x24)
+ALLOWED_HEX["kernel"] |= {0x12D, 0xAA, 0x61469F2B, 0x47EE778677FA09DD, 0x779317A219BD9753}   # LDAC: the vendor and codec ids (0x0000012D, 0x00AA) of the media codec element, the add-on's export, the self-tests' hashes
+# The thread manager's system-wide pid (0x10021): the engine lists the threads with it to read the audio sender's priority (read only; the kernel's own pid is refused by that call).
+ALLOWED_HEX["kernel"] |= {0x10021}
+
+# The link log (kernel/btevlog*.[ch]): the standard L2CAP protocol numbers (PSMs) it names profiles by: HID control and interrupt, AVCTP, AVDTP,
+# AVCTP browsing (and RFCOMM, 3), and the 24-bit mask of an address half. They are protocol numbers and masks, not addresses; the log only reads the Bluetooth code's own link slots.
+ALLOWED_HEX["kernel"] |= {0x3, 0x11, 0x13, 0x17, 0x19, 0x1B, 0xFFFFFF}
+
+# The headphones' codec list (kernel/btcodecs.h, include/bluetoothturbo.h): the vendor and codec numbers of the media codec element by which each codec is told
+# apart (A2DP codec tables: protocol numbers, not addresses; the aptX and LDAC ones are above), and the magic of the
+# list's own file. The signalling hook reads the headphones' replies only.
+ALLOWED_HEX["kernel"] |= {0xAD, 0xA, 0x53A, 0x4C4C, 0x4C32, 0x4C33, 0x4C35, 0x75, 0x8A9, 0xE0, 0x5F1, 0x1005, 0x102, 0x103, 0x484C, 0x25, 0x2, 0x4C435442}
 
 # (label, regex) - anything found in a source is a failure.
 FORBIDDEN = [

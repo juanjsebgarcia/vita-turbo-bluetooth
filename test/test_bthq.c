@@ -115,6 +115,7 @@ void btt_klog_line(const char *line)
 		printf("    %s\n", line);
 }
 
+#include "../kernel/btaac_neg.c"   /* the AAC stream state the configuration hook reads (it writes nothing unless AAC marked the connection) */
 #include "../kernel/btqual_hook.c"
 #include "../kernel/btqual.c"
 #include "../kernel/bthq.c"

@@ -10,6 +10,9 @@
  * went in, stays in passing every call through until module stop. Cheap when nothing changes. */
 void btt_btreconn_sync(int on);
 
+/* 1 while a wake-up is in hand (waiting for Bluetooth, settling, between attempts): the connect call may be made at any moment. */
+int btt_btreconn_busy(void);
+
 /* Module stop: the hook and the handler out. */
 void btt_btreconn_restore(void);
 

@@ -9,6 +9,10 @@
  * changes. */
 void btt_bt_sync(int ts_fix, int latency, int ctrl_fast);
 
+/* Whether the stream is AAC (kernel/btaac_stream.h, btt_aac_stream_is_aac), called before btt_bt_sync: the send queue's limit for a latency level is then the AAC
+ * one (btaac_lat.h) instead of the SBC one. The change is made by the next btt_bt_sync. */
+void btt_bt_set_aac(int aac);
+
 /* Everything back to stock (module stop). */
 void btt_bt_restore(void);
 

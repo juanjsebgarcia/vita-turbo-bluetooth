@@ -22,3 +22,8 @@ int lowbatt_step(LowBatt *s, int level, int connected, int enabled)
 	s->fired |= fresh;
 	return fresh && enabled ? level : -1;
 }
+
+int lowbatt_notice_due(unsigned tick, unsigned sample_polls, int connected)
+{
+	return connected || sample_polls == 0 || tick % sample_polls == 0;
+}

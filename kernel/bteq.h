@@ -10,6 +10,9 @@
  * until btt_bteq_restore at module stop. Cheap when nothing changes. */
 void btt_bteq_sync(const int *settings);
 
+/* 1 once the sender's hook is in (AAC streaming offers AAC only then: without it the engine would get no sound). */
+int btt_bteq_hook_in(void);
+
 /* Everything back to stock (module stop). */
 void btt_bteq_restore(void);
 

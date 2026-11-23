@@ -1,0 +1,13 @@
+bluetoothturbo_aac:
+  attributes: 0
+  version:
+    major: 0
+    minor: 2
+  main:
+    start: module_start
+    stop: module_stop
+  libraries:
+    SceBluetoothTurboAac:
+      syscall: false
+      functions:
+        - btaacGetApi

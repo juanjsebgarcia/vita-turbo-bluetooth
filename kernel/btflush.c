@@ -50,6 +50,7 @@ static const uint8_t k_evt_tail[14] = { 0x01, 0x2A, 0xA5, 0xB0, 0x92, 0x46, 0x23
 #define N_HOOKS 3
 static SceUID g_flush_uid[N_HOOKS] = { -1, -1, -1 };
 static int g_flush_dead;                           /* installing failed: never set a timeout   */
+static int g_evt_dead;                             /* the event hook alone (the link log) was refused: not tried again    */
 
 static int flush_same(const volatile uint8_t *p, const uint8_t *b, int n)
 {
@@ -67,7 +68,9 @@ static int flush_same_masked(const volatile uint8_t *p, const uint8_t *b, const 
 	return 1;
 }
 
-static int flush_find(void)
+/* Look at the Bluetooth code: `sss` = the stream start, stream stop and command sender sites must be stock, `evt` = the event handler's. -2 = the code cannot be read (ask
+ * again later), -1 = it is not the code this module knows, else the module's id. */
+static int flush_find(int sss, int evt)
 {
 	tai_module_info_t ti;
 	uintptr_t base = 0;
@@ -76,15 +79,19 @@ static int flush_find(void)
 	ti.size = sizeof(ti);
 	if (taiGetModuleInfoForKernel(KERNEL_PID, "SceBt", &ti) < 0 ||
 	    module_get_offset(KERNEL_PID, ti.modid, 0, 0, &base) < 0 || !base)
-		return -1;
+		return -2;
 	const volatile uint8_t *text = (const volatile uint8_t *)base;
-	if (!flush_same(text + OFF_START, k_start_stock, 8) || !flush_same(text + OFF_STOP, k_stop_stock, 8) ||
-	    !flush_same(text + OFF_SENDER, k_sender_stock, 6) ||
-	    !flush_same_masked(text + OFF_EVT, k_evt_head, k_evt_mask, 12) || !flush_same(text + OFF_EVT_TAIL, k_evt_tail, 14)) {
-		BTT_KLOG("bluetooth flush: stream or event code not recognised - no flush timeout");
+	if (sss && (!flush_same(text + OFF_START, k_start_stock, 8) || !flush_same(text + OFF_STOP, k_stop_stock, 8) ||
+	            !flush_same(text + OFF_SENDER, k_sender_stock, 6))) {
+		BTT_KLOG("bluetooth flush: stream code not recognised - no flush timeout");
 		return -1;
 	}
-	btflush_sender = (void *)(base + OFF_SENDER + 1);   /* Thumb */
+	if (evt && (!flush_same_masked(text + OFF_EVT, k_evt_head, k_evt_mask, 12) || !flush_same(text + OFF_EVT_TAIL, k_evt_tail, 14))) {
+		BTT_KLOG("bluetooth flush: event code not recognised - %s", sss ? "no flush timeout" : "no link log");
+		return -1;
+	}
+	if (sss)
+		btflush_sender = (void *)(base + OFF_SENDER + 1);   /* Thumb */
 	return (int)ti.modid;
 }
 
@@ -116,14 +123,19 @@ void btt_btflush_sync(int lowest)
 		};
 		static volatile tai_hook_ref_t *const ref[N_HOOKS] = { &btflush_start_ref, &btflush_stop_ref, &btflush_evt_ref };
 		SceUID r[N_HOOKS] = { -1, -1, -1 };
-		int modid = flush_find(), i;
+		/* the event hook may already be in for the link log: it stays as it is, and its site (taiHEN's jump now) is not looked at again */
+		int evt_in = g_flush_uid[2] >= 0, modid = flush_find(1, !evt_in), i;
 
 		if (modid < 0) {
 			g_flush_dead = 1;
 			return;
 		}
-		*ref[0] = *ref[1] = *ref[2] = 0;
+		*ref[0] = *ref[1] = 0;
+		if (!evt_in)
+			*ref[2] = 0;
 		for (i = 0; i < N_HOOKS; i++) {
+			if (i == 2 && evt_in)
+				continue;
 			r[i] = taiHookFunctionOffsetForKernel(KERNEL_PID, (tai_hook_ref_t *)ref[i], modid, 0,
 			                                      site[i].off, 1, site[i].hook);
 			if (r[i] < 0)
@@ -140,6 +152,33 @@ void btt_btflush_sync(int lowest)
 	}
 	btflush_slots = FLUSH_SLOTS;
 	btflush_guard = 1;
+}
+
+int btt_btflush_evt_sync(int want)
+{
+	SceUID uid;
+	int modid;
+
+	if (g_flush_uid[2] >= 0)
+		return 1;                  /* in (for the guard or the log): it stays in while the module runs, passing through when not wanted */
+	if (!want || g_evt_dead)
+		return 0;
+	modid = flush_find(0, 1);
+	if (modid < 0) {
+		g_evt_dead = modid == -1;  /* an unreadable module is asked again on the next pass */
+		return 0;
+	}
+	btflush_evt_ref = 0;
+	uid = taiHookFunctionOffsetForKernel(KERNEL_PID, (tai_hook_ref_t *)&btflush_evt_ref, modid, 0, OFF_EVT, 1, (const void *)btflush_evt_hook);
+	if (uid < 0) {
+		BTT_KLOG("bluetooth link log: event hook failed 0x%08x - no link log", (unsigned)uid);
+		btflush_evt_ref = 0;
+		g_evt_dead = 1;
+		return 0;
+	}
+	g_flush_uid[2] = uid;
+	BTT_KLOG("bluetooth link log: event hook on");
+	return 1;
 }
 
 void btt_btflush_restore(void)

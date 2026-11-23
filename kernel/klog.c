@@ -29,7 +29,7 @@ void btt_klog_line(const char *line)
 	if (g_disabled || g_mtx < 0)
 		return;
 	ksceKernelLockMutex(g_mtx, 1, NULL);
-	int n = strnlen(line, 190);
+	int n = strnlen(line, 250);
 	if (g_bytes + n + 1 > BTT_KLOG_MAX_BYTES) {
 		g_disabled = 1;
 	} else {

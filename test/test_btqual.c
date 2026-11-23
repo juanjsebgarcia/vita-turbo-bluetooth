@@ -100,6 +100,7 @@ void btt_klog_line(const char *line)
 		printf("    %s\n", line);
 }
 
+#include "../kernel/btaac_neg.c"   /* the AAC stream state the configuration hook reads (it writes nothing unless AAC marked the connection) */
 #include "../kernel/btqual_hook.c"
 #include "../kernel/btqual.c"
 
@@ -363,6 +364,44 @@ static void test_refusals(void)
 	CHECK(g_tai.releases == 1, "released %d", g_tai.releases);
 }
 
+/* AAC streaming shares this hook (btaac_hook.h, H2): the real hook body, with a connection the AAC code marked, replaces the configuration the original
+ * has just narrowed; with any other connection the hook is exactly what it was, whatever the AAC state says. */
+static void test_aac_shares_the_hook(void)
+{
+	uint8_t *rec = g_conn + BTAAC_C_REC_B;
+	static const uint8_t sbc[14] = { 0x01, 0x00, 0x07, 0x06, 0x00, 0x00, 0x21, 0x15, 0x02, 0x35, 0x04, 0x02, 0x02, 0x00 };
+	static const uint8_t aac[12] = { 0x01, 0x00, 0x07, 0x08, 0x00, 0x02, 0x80, 0x00, 0x84, 0x03, 0xE8, 0x00 };
+	uint8_t before[CONN_SIZE];
+
+	reset();
+	btqual_ref = (tai_hook_ref_t)fake_cfg;
+	btaac_neg.conn_lo = (uintptr_t)g_conn;
+	btaac_neg.conn_hi = btaac_neg.conn_lo + BTAAC_SLOT_SIZE;
+	/* what the code has in the record when it calls: state 4, our endpoint, theirs, the SBC bytes it narrowed, their length */
+	memset(rec, 0, 0x24);
+	rec[0] = 4; rec[4] = 4; rec[5] = 0x14;
+	memcpy(rec + 6, sbc, 14);
+	rec[0x18] = 14;
+	/* nothing marked: untouched, the cap behaves as it always did */
+	memcpy(before, g_conn, sizeof(before));
+	CHECK(btqual_hook(g_conn, 8, rec + 6, 14) == g_orig_ret, "the original's answer");
+	CHECK(!memcmp(rec, before + BTAAC_C_REC_B, 0x24), "no AAC mark: the record is as the code left it");
+	/* marked: the sink offered AAC (state PROBING), AAC is on */
+	btaac_neg.conn = (uintptr_t)g_conn;
+	btaac_neg.state = BTAAC_N_PROBING;
+	btaac_neg.have = 1; btaac_neg.seid = 0x18; btaac_neg.object = BTAAC_OBJ_MPEG2_LC; btaac_neg.max_bps = 264630; btaac_neg.enable = 1; btaac_neg.kbps = 256;
+	btqual_cap = 40;
+	g_range[0] = 2; g_range[1] = 53;
+	CHECK(btqual_hook(g_conn, 8, rec + 6, 14) == g_orig_ret && g_orig.calls >= 2, "the original ran first, with the call as it came");
+	CHECK(rec[5] == 0x18 && rec[4] == 4 && rec[0x18] == 12 && !memcmp(rec + 6, aac, 12) && btaac_neg.state == BTAAC_N_PENDING, "the record was rewritten after it");
+	CHECK(bp()[1] == 40, "and the quality cap still did its work on the SBC range the original made (the stream needs it for the SBC fallback)");
+	btqual_cap = 0;
+	/* a call that only reads capabilities (flag 4 here) is not ours */
+	btaac_neg.state = BTAAC_N_PROBING;
+	memcpy(rec + 6, sbc, 14); rec[5] = 0x14; rec[0x18] = 14;
+	CHECK(btqual_hook(g_conn, 4, rec + 6, 14) == g_orig_ret && rec[5] == 0x14 && !memcmp(rec + 6, sbc, 14) && btaac_neg.state == BTAAC_N_PROBING, "another flag: untouched");
+}
+
 int main(void)
 {
 	static const struct { const char *name; void (*fn)(void); } tests[] = {
@@ -372,6 +411,7 @@ int main(void)
 		{ "installer: one hook, the caps, Standard, stop", test_installer },
 		{ "the address loads may hold any immediates", test_loader_immediates },
 		{ "refusals: other bytes, no module, a refused hook", test_refusals },
+		{ "AAC streaming shares the hook: marked connection rewritten, others untouched", test_aac_shares_the_hook },
 	};
 	int n = (int)(sizeof(tests) / sizeof(tests[0]));
 

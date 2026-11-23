@@ -71,7 +71,7 @@ typedef struct {
 	int  saved;              /* 1: settings file preset (Low latency, Custom sound, bands, the 0.2 keys, and the newer ones with a name),
 	                          * 2: a 0.1 file: 8 keys, low latency 1, 3: a file from before the quality key: 13 keys, 4: 14 keys, the quality key in the old order,
 	                          *    a file from before the disconnect and reconnect keys and the name: no name,
-	                          * 5: a file from a later version: 20 keys, then the name, 6: as 1 with a name that is not valid,
+	                          * 5: a file from a later version: three more keys than this build has, then the name, 6: as 1 with a name that is not valid,
 	                          * 7: as 1 but claiming 40 keys (more than any version has), so no name and no order marker are read,
 	                          * 8, 9, 10: files from before the audio quality order (no marker after the name) holding the old
 	                          * quality 1 (Balanced), 0 (Best) and 3 (not a value of that order), 11: a current file holding Highest,
@@ -81,8 +81,9 @@ typedef struct {
 	                          * 13: a current file with Read Headset Battery off (the stored mode says on, and is not read): the mode is off */
 	int  toggle;             /* 1: scripted changes at 60 / 65 / 68 / 70 / 75 / 80 s */
 	int  early;              /* 1: scripted changes between the early and the late gate: Lowest and Fast at 20 s, the master
-	                          * switch off at 25 s and on at 30 s */
+	                          * switch off at 25 s and on at 30 s; 2: the master switch off from the start until EARLY_OFF_UNTIL s */
 } Scn;
+#define EARLY_OFF_UNTIL 20   /* scenario early == 2: the master switch is off from the start until this uptime (s); nothing of the add-ons' self-tests may be asked meanwhile */
 
 static const Scn *S;
 static uint64_t g_now;
@@ -332,6 +333,141 @@ void btt_hfp_sync(int mode)
 }
 void btt_hfp_restore(void) { g_hfp_restore++; g_restore_order = ++g_order; }
 
+/* The optional add-ons (AAC: btaac_link.c, tested on its own in test_btaac_link.c; aptX and LDAC: btaptx_link.c and btldac_link.c, tested in test_btaac_stream.c):
+ * looked for once the early gate is open (called on every pass from then on; the real call does its work once). Their self-tests are asked from the early gate,
+ * one at a time (the next only after the one before has its verdict), only while the master switch is on, and never again; the fakes are the add-ons' side: the AAC
+ * and LDAC verdicts come a little after the ask (their own threads), the aptX one at once (it runs inside the call). With BTT_TEST_SELFTEST_STUCK in the environment
+ * the AAC add-on never gives a verdict: the next test starts BTT_SELFTEST_WAIT seconds after it was asked. The modules themselves are not started or stopped from
+ * here: they have their own entry. */
+#define AAC_VERDICT_US   600000ull
+#define LDAC_VERDICT_US  1000000ull
+static int selftest_stuck(void) { return getenv("BTT_TEST_SELFTEST_STUCK") != NULL; }
+static struct { uint64_t us; int on, codec; } g_aac[1024];
+static int g_naac, g_aac_find, g_aac_avail_fake;
+void btt_aac_link_find(void) { must_be_early("btt_aac_link_find"); g_aac_find++; }
+void btt_aac_link_sync(int on, int codec)
+{
+	must_be_early("btt_aac_link_sync");
+	CHECK(g_naac < 1024, "too many calls");
+	g_aac[g_naac].us = g_now;
+	g_aac[g_naac].on = on;
+	g_aac[g_naac++].codec = codec;
+	g_last_sync_order = ++g_order;
+}
+int btt_aac_selftest_done(void) { return g_naac && !selftest_stuck() && g_now >= g_aac[0].us + AAC_VERDICT_US; }
+int btt_aac_avail(void) { return g_aac_avail_fake; }
+
+/* The optional aptX module (btaptx_link.c, tested in test_btaac_stream.c): looked for on the same passes and asked on the same late passes as the AAC one. */
+static int g_apt_find, g_napt, g_apt_avail_fake;
+static struct { uint64_t us; int on; } g_apt[8];
+void btt_aptx_link_find(void) { must_be_early("btt_aptx_link_find"); g_apt_find++; }
+void btt_aptx_link_sync(int on, int codec)
+{
+	must_be_early("btt_aptx_link_sync");
+	(void)codec;
+	CHECK(g_napt < 8, "too many calls");
+	g_apt[g_napt].us = g_now;
+	g_apt[g_napt++].on = on;
+}
+int btt_aptx_selftest_done(void) { return g_napt > 0; }   /* the aptX test runs inside the ask */
+int btt_aptx_avail(void) { return g_apt_avail_fake; }
+int btt_aptx_hd_usable(void) { return 0; }
+/* The optional LDAC module (btldac_link.c, tested in test_btaac_stream.c): looked for and asked on the same passes as the others; its setting and the 5-slot packet types are passed on late. */
+static int g_ld_find, g_nld, g_ld_avail_fake;
+static struct { uint64_t us; int on; } g_ld[8];
+void btt_ldac_link_find(void) { must_be_early("btt_ldac_link_find"); g_ld_find++; }
+void btt_ldac_link_sync(int on, int codec)
+{
+	must_be_early("btt_ldac_link_sync");
+	(void)codec;
+	CHECK(g_nld < 8, "too many calls");
+	g_ld[g_nld].us = g_now;
+	g_ld[g_nld++].on = on;
+}
+int btt_ldac_selftest_done(void) { return g_nld && g_now >= g_ld[0].us + LDAC_VERDICT_US; }
+int btt_ldac_avail(void) { return g_ld_avail_fake; }
+int btt_ldac_codec_effective(int codec) { (void)codec; return 0; }
+void btt_aac_stream_set_ldac_mode(unsigned mode) { must_be_late("btt_aac_stream_set_ldac_mode"); (void)mode; }
+/* aptX HD When Available: handed on every late pass, before the stream pass and the apply pass */
+static int g_aptxhd_log[1024], g_naptxhd;
+void btt_aac_stream_set_aptx_hd(int on) { must_be_late("btt_aac_stream_set_aptx_hd"); CHECK(g_naptxhd < 1024, "too many calls"); g_aptxhd_log[g_naptxhd++] = on; }
+/* Music Source Only: handed on every late pass, before the stream pass */
+static int g_srconly_log[1024], g_nsrconly;
+void btt_aac_stream_set_source_only(int on) { must_be_late("btt_aac_stream_set_source_only"); CHECK(g_nsrconly < 1024, "too many calls"); g_srconly_log[g_nsrconly++] = on; }
+void btt_bthq_set_ldac(int on) { must_be_late("btt_bthq_set_ldac"); (void)on; }
+
+/* AAC streaming (btaac_stream.c) and the link information (btlink.c), tested on their own in test_btaac_stream.c: called on every late pass with the
+ * master switch, the codec, the accelerated setting and the latency; the worker looks every 0.1 s instead of every 0.5 s while an AAC stream is configured;
+ * restored first at stop. */
+static struct { uint64_t us; int on, codec, accel; } g_stream[1024];
+static struct { uint64_t us; int on, latency; } g_link[1024];
+static int g_nstream, g_nlink, g_stream_restore, g_stream_fast_fake, g_stream_wait_fast, g_stream_restore_first;
+void btt_aac_stream_pass(int on, int codec, int accel)
+{
+	must_be_late("btt_aac_stream_pass");
+	CHECK(g_nstream < 1024, "too many calls");
+	g_stream[g_nstream].us = g_now;
+	g_stream[g_nstream].on = on;
+	g_stream[g_nstream].codec = codec;
+	g_stream[g_nstream++].accel = accel;
+	g_last_sync_order = ++g_order;
+}
+int btt_aac_stream_fast(void) { return g_stream_fast_fake; }
+/* the send queue's limit follows the stream's codec (an early call each pass, before btt_bt_sync) and the engine's output bound follows the latency level (a late call) */
+static int g_nsetaac, g_nlat, g_lat_level[1024], g_is_aac_fake;
+int btt_aac_stream_is_aac(void) { return g_is_aac_fake; }
+void btt_bt_set_aac(int aac) { must_be_early("btt_bt_set_aac"); CHECK(aac == g_is_aac_fake, "the stream's codec is passed on"); g_nsetaac++; }
+void btt_aac_stream_set_latency(int level) { must_be_late("btt_aac_stream_set_latency"); CHECK(g_nlat < 1024, "too many calls"); g_lat_level[g_nlat++] = level; }
+/* the AAC bit rate (kb/s) the worker last handed on: a late call, every pass */
+static unsigned g_kbps_log[1024];
+static int g_nkbps;
+void btt_aac_stream_set_kbps(unsigned kbps) { must_be_late("btt_aac_stream_set_kbps"); CHECK(g_nkbps < 1024, "too many calls"); g_kbps_log[g_nkbps++] = kbps; }
+int btt_aac_stream_wants_pcm_hook(void) { return 0; }
+void btt_aac_stream_restore(void) { g_stream_restore_first = g_order == g_last_sync_order; g_stream_restore++; g_restore_order = ++g_order; }
+static int g_ncodecs;
+void btt_codecs_pass(void) { must_be_late("btt_codecs_pass"); g_ncodecs++; }   /* the codec lists' file: the worker's, every late pass */
+static int g_nfall;
+void btt_fall_pass(int on, int codec) { must_be_late("btt_fall_pass"); (void)on; (void)codec; g_nfall++; }   /* the codec fallback notice (btfall.c, test_btfall.c): after the link information, every late pass */
+void btt_link_pass(int on, int latency)
+{
+	must_be_late("btt_link_pass");
+	CHECK(g_nlink < 1024, "too many calls");
+	g_link[g_nlink].us = g_now;
+	g_link[g_nlink].on = on;
+	g_link[g_nlink++].latency = latency;
+	g_last_sync_order = ++g_order;
+}
+
+/* the settings that apply at once: the five settings the worker hands on, every late pass; the no-mute hold is set by the environment (a second run of the test) */
+static struct { uint64_t us; int on, codec, kbps, accel, quality, aptx_hd; } g_apply[1024];
+static int g_napply;
+static int g_refresh_pending, g_refresh_taken;   /* Refresh Codecs: noted by the syscall, taken by the next apply pass */
+static int apply_hold(void) { return getenv("BTT_TEST_APPLY_HOLD") != NULL; }
+void btt_btapply_pass(int on, int codec, int kbps, int accel, int quality, int aptx_hd)
+{
+	must_be_late("btt_btapply_pass");
+	g_refresh_taken += g_refresh_pending;
+	g_refresh_pending = 0;
+	CHECK(g_napply < 1024, "too many calls");
+	g_apply[g_napply].us = g_now;
+	g_apply[g_napply].on = on;
+	g_apply[g_napply].codec = codec;
+	g_apply[g_napply].kbps = kbps;
+	g_apply[g_napply].accel = accel;
+	g_apply[g_napply].quality = quality;
+	g_apply[g_napply++].aptx_hd = aptx_hd;
+	g_last_sync_order = ++g_order;
+}
+int btt_btapply_hold(void) { return apply_hold(); }
+/* Refresh Codecs: the syscall's request, taken by the next btt_btapply_pass (the real one is in btapply.c, tested in test_btapply.c): one at a time. */
+int btt_btapply_request_refresh(void)
+{
+	if (g_refresh_pending)
+		return BTT_ERR_BUSY;
+	g_refresh_pending = 1;
+	return BTT_OK;
+}
+
 /* the system's checked copies between the caller's memory and the kernel's: plain copies here */
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, size_t len) { memcpy(dst, src, len); return 0; }
 SceSSize ksceKernelStrncpyUserToKernel(char *dst, const char *src, SceSize len)
@@ -359,6 +495,20 @@ void btt_btflush_sync(int lowest)
 	g_last_sync_order = ++g_order;
 }
 void btt_btflush_restore(void) { g_flush_restore++; g_restore_order = ++g_order; }
+
+/* The link log (btevlog.c, tested on its own in test_btevlog.c): called on every late pass with the master switch; its "a link is new" answer makes the worker pass faster, like the AAC stream's. */
+static struct { uint64_t us; int on; } g_evlog[1024];
+static int g_nevlog, g_evlog_restore, g_evlog_fast_fake, g_evlog_wait_fast;
+void btt_btevlog_pass(int on)
+{
+	must_be_late("btt_btevlog_pass");
+	CHECK(g_nevlog < 1024, "too many calls");
+	g_evlog[g_nevlog].us = g_now;
+	g_evlog[g_nevlog++].on = on;
+	g_last_sync_order = ++g_order;
+}
+int btt_btevlog_fast(void) { return g_evlog_fast_fake; }
+void btt_btevlog_restore(void) { g_evlog_restore++; g_restore_order = ++g_order; }
 
 /* ---- the simulated kernel -------------------------------------------------------- */
 
@@ -389,20 +539,35 @@ int ksceKernelWaitEventFlag(SceUID ev, unsigned bits, unsigned mode, unsigned *r
 		*res = EV_STOP;
 		return 0;
 	}
-	g_now += BTT_CHECK_MS * 1000ull;
+	CHECK(timeout && *timeout == (g_stream_fast_fake || g_evlog_fast_fake ? BTT_FAST_MS : BTT_CHECK_MS) * 1000u, "the worker waited %u us with fast = %d, %d", timeout ? (unsigned)*timeout : 0u,
+	      g_stream_fast_fake, g_evlog_fast_fake);
+	g_stream_wait_fast += g_stream_fast_fake;
+	g_evlog_wait_fast += g_evlog_fast_fake;
+	g_now += BTT_CHECK_MS * 1000ull;     /* (the grid of the scripted changes stays 0.5 s whatever the worker asked for) */
 	unsigned sec = (unsigned)(g_now / 1000000);
+	g_stream_fast_fake = g_now >= US(70) && g_now < US(72);   /* an AAC stream configured for two seconds */
+	g_evlog_fast_fake = g_now >= US(84) && g_now < US(85);    /* a new link, for one second */
 	g_shell_present = S->shell_sec >= 0 && (int)sec >= S->shell_sec;
 	if (g_guard_clear && !g_guard_clear_seen_us)
 		g_guard_clear_seen_us = g_now;
-	if (S->early) {
+	if (S->early == 2) {
+		if (g_now == US(S->boot_sec) + BTT_CHECK_MS * 1000ull)
+			CHECK(bttSet(BTT_KEY_ENABLE, 0) == BTT_OK, "bttSet enable off at the start");
+		if (g_now == US(EARLY_OFF_UNTIL))
+			CHECK(bttSet(BTT_KEY_ENABLE, 1) == BTT_OK, "bttSet enable on");
+	}
+	if (S->early == 1) {
 		if (g_now == US(20)) {
 			CHECK(bttSet(BTT_KEY_LOWLAT, BTT_LAT_LOWEST) == BTT_OK, "bttSet latency early");
 			CHECK(bttSet(BTT_KEY_CTRL, BTT_CTRL_FAST) == BTT_OK, "bttSet controller response early");
 		}
 		if (g_now == US(25))
 			CHECK(bttSet(BTT_KEY_ENABLE, 0) == BTT_OK, "bttSet enable off early");
-		if (g_now == US(30))
+		if (g_now == US(30)) {
 			CHECK(bttSet(BTT_KEY_ENABLE, 1) == BTT_OK, "bttSet enable on early");
+			/* Refresh Codecs waits for the start-up period: nothing is noted before it is over */
+			CHECK(bttSet(BTT_KEY_REFRESH_CODECS, 1) == BTT_ERR_BUSY && !g_refresh_pending, "Refresh Codecs accepted in the start-up period");
+		}
 	}
 	if (S->toggle) {
 		if (g_now == US(60)) {
@@ -432,9 +597,18 @@ int ksceKernelWaitEventFlag(SceUID ev, unsigned bits, unsigned mode, unsigned *r
 			/* the Settings module reports a page it did not change: each reason is logged once, a value that is no
 			 * reason is refused and logs nothing */
 			CHECK(bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_SIZE) == BTT_OK && bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_SIZE) == BTT_OK &&
-			      bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_ANCHOR) == BTT_OK, "a page skip reason refused");
+			      bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_ANCHOR) == BTT_OK && bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_DEVROWS_CLOSE) == BTT_OK &&
+			      bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_DEVROWS_ROOM) == BTT_OK, "a page skip reason refused");
 			CHECK(bttSet(BTT_KEY_PAGE_SKIP, 0) == BTT_ERR_RANGE && bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_COUNT) == BTT_ERR_RANGE &&
 			      bttSet(BTT_KEY_PAGE_SKIP, -1) == BTT_ERR_RANGE, "a page skip value that is no reason accepted");
+		}
+		if (g_now == US(61)) {
+			/* Refresh Codecs: write only, only the value 1, one request at a time (the second is refused until the pass has taken the first), not stored */
+			CHECK(bttSet(BTT_KEY_REFRESH_CODECS, 0) == BTT_ERR_RANGE && bttSet(BTT_KEY_REFRESH_CODECS, 2) == BTT_ERR_RANGE &&
+			      bttSet(BTT_KEY_REFRESH_CODECS, -1) == BTT_ERR_RANGE && !g_refresh_pending, "Refresh Codecs took a value that is not 1");
+			CHECK(bttGet(BTT_KEY_REFRESH_CODECS) == BTT_ERR_ARG, "Refresh Codecs can be read");
+			CHECK(bttSet(BTT_KEY_REFRESH_CODECS, 1) == BTT_OK && g_refresh_pending, "Refresh Codecs refused after the start-up period");
+			CHECK(bttSet(BTT_KEY_REFRESH_CODECS, 1) == BTT_ERR_BUSY, "a second Refresh Codecs before the pass was accepted");
 		}
 		if (g_now == US(85)) {
 			CHECK(bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_ALLOC) == BTT_OK && bttSet(BTT_KEY_PAGE_SKIP, BTT_SKIP_SIZE) == BTT_OK,
@@ -465,6 +639,35 @@ int ksceKernelWaitEventFlag(SceUID ev, unsigned bits, unsigned mode, unsigned *r
 			CHECK(bttSet(BTT_KEY_READBATT, 2) == BTT_ERR_RANGE && bttSet(BTT_KEY_READBATT, -1) == BTT_ERR_RANGE &&
 			      bttGet(BTT_KEY_READBATT) == 0 && bttGet(BTT_KEY_HFP) == 0, "a refused Read Headset Battery value changed something");
 			CHECK(bttSet(BTT_KEY_HFP, BTT_HFP_MODE_MAX + 1) == BTT_ERR_RANGE && bttGet(BTT_KEY_HFP) == 0, "bttSet the battery mode");
+			/* the AAC keys: SBC and the NEON build on by default whatever an older file said; range checked; stored */
+			CHECK(bttGet(BTT_KEY_CODEC) == BTT_CODEC_SBC && bttGet(BTT_KEY_AAC_ACCEL) == 1, "the AAC keys are not at their defaults (%d, %d)",
+			      bttGet(BTT_KEY_CODEC), bttGet(BTT_KEY_AAC_ACCEL));
+			CHECK(bttSet(BTT_KEY_CODEC, BTT_CODEC_COUNT) == BTT_ERR_RANGE && bttSet(BTT_KEY_CODEC, -1) == BTT_ERR_RANGE &&
+			      bttSet(BTT_KEY_AAC_ACCEL, 2) == BTT_ERR_RANGE && bttSet(BTT_KEY_AAC_ACCEL, -1) == BTT_ERR_RANGE &&
+			      bttGet(BTT_KEY_CODEC) == BTT_CODEC_SBC && bttGet(BTT_KEY_AAC_ACCEL) == 1, "an AAC key accepted a value out of range");
+			/* what the Settings page may offer of AAC: read only, answered by the AAC link (here a fake), never a stored key */
+			g_aac_avail_fake = BTT_AAC_AVAIL_MODULE | BTT_AAC_AVAIL_TESTED;
+			CHECK(bttGet(BTT_KEY_AAC_AVAIL) == (BTT_AAC_AVAIL_MODULE | BTT_AAC_AVAIL_TESTED), "bttGet of the AAC availability");
+			g_aac_avail_fake = 0;
+			CHECK(bttGet(BTT_KEY_AAC_AVAIL) == 0 && bttSet(BTT_KEY_AAC_AVAIL, 1) == BTT_ERR_ARG && bttSet(BTT_KEY_AAC_AVAIL, 0) == BTT_ERR_ARG &&
+			      bttGet(BTT_KEY_AAC_AVAIL) == 0, "the availability is read only: 0 without the AAC module");
+			/* the same for aptX: the codec key takes its value, the availability is read only */
+			g_apt_avail_fake = BTT_APTX_AVAIL_MODULE | BTT_APTX_AVAIL_TESTED;
+			CHECK(bttGet(BTT_KEY_APTX_AVAIL) == (BTT_APTX_AVAIL_MODULE | BTT_APTX_AVAIL_TESTED) && bttSet(BTT_KEY_APTX_AVAIL, 1) == BTT_ERR_ARG, "bttGet of the aptX availability, read only");
+			g_apt_avail_fake = 0;
+			CHECK(bttGet(BTT_KEY_APTX_AVAIL) == 0 && bttSet(BTT_KEY_CODEC, BTT_CODEC_APTX) == BTT_OK && bttGet(BTT_KEY_CODEC) == BTT_CODEC_APTX && bttSet(BTT_KEY_CODEC, BTT_CODEC_SBC) == BTT_OK,
+			      "the codec key takes aptX");
+			CHECK(bttSet(BTT_KEY_CODEC, BTT_CODEC_AAC) == BTT_OK && bttSet(BTT_KEY_AAC_ACCEL, 0) == BTT_OK &&
+			      bttGet(BTT_KEY_CODEC) == BTT_CODEC_AAC && bttGet(BTT_KEY_AAC_ACCEL) == 0, "bttSet the AAC keys");
+			/* the AAC bit rate: an index into 128/192/256/320 kb/s, 256 by default unless the file says otherwise, range checked, stored */
+			CHECK(bttGet(BTT_KEY_AAC_BITRATE) == ((S->saved == 1 || S->saved >= 5) && S->saved != 12 ? BTT_AACBR_192 : BTT_AACBR_256),
+			      "the AAC bit rate is not what the file or the default says (%d)", bttGet(BTT_KEY_AAC_BITRATE));
+			{
+				int before = bttGet(BTT_KEY_AAC_BITRATE);
+				CHECK(bttSet(BTT_KEY_AAC_BITRATE, BTT_AACBR_COUNT) == BTT_ERR_RANGE && bttSet(BTT_KEY_AAC_BITRATE, -1) == BTT_ERR_RANGE &&
+				      bttGet(BTT_KEY_AAC_BITRATE) == before, "the AAC bit rate accepted a value out of range");
+			}
+			CHECK(bttSet(BTT_KEY_AAC_BITRATE, BTT_AACBR_320) == BTT_OK && bttGet(BTT_KEY_AAC_BITRATE) == BTT_AACBR_320, "bttSet the AAC bit rate");
 		}
 		if (g_now == US(67)) {
 			/* a mode change made directly through BTT_KEY_HFP moves the internal mode by itself: the user's key is not rewritten */
@@ -498,6 +701,16 @@ int ksceKernelWaitEventFlag(SceUID ev, unsigned bits, unsigned mode, unsigned *r
 		if (g_now == US(75)) {
 			CHECK(bttSet(BTT_KEY_SOUND, BTT_SOUND_CUSTOM) == BTT_OK, "bttSet custom");
 			CHECK(bttSet(BTT_KEY_BAND1, 2) == BTT_OK && bttSet(BTT_KEY_BAND5, 10) == BTT_OK, "bttSet bands");
+			/* aptX HD When Available: on by default (also with an older file, which has no such key), range checked, stored */
+			CHECK(bttGet(BTT_KEY_APTX_HD) == 1, "aptX HD When Available is not on by default (%d)", bttGet(BTT_KEY_APTX_HD));
+			CHECK(bttSet(BTT_KEY_APTX_HD, 2) == BTT_ERR_RANGE && bttSet(BTT_KEY_APTX_HD, -1) == BTT_ERR_RANGE && bttGet(BTT_KEY_APTX_HD) == 1,
+			      "aptX HD When Available accepted a value out of range");
+			CHECK(bttSet(BTT_KEY_APTX_HD, 0) == BTT_OK && bttGet(BTT_KEY_APTX_HD) == 0, "bttSet aptX HD When Available");
+			/* Music Source Only: on by default (an older file has no such key either), range checked, stored */
+			CHECK(bttGet(BTT_KEY_SOURCE_ONLY) == 1, "Music Source Only is not on by default (%d)", bttGet(BTT_KEY_SOURCE_ONLY));
+			CHECK(bttSet(BTT_KEY_SOURCE_ONLY, 2) == BTT_ERR_RANGE && bttSet(BTT_KEY_SOURCE_ONLY, -1) == BTT_ERR_RANGE && bttGet(BTT_KEY_SOURCE_ONLY) == 1,
+			      "Music Source Only accepted a value out of range");
+			CHECK(bttSet(BTT_KEY_SOURCE_ONLY, 0) == BTT_OK && bttGet(BTT_KEY_SOURCE_ONLY) == 0, "bttSet Music Source Only");
 		}
 		if (g_now == US(80))
 			CHECK(bttSet(BTT_KEY_ENABLE, 0) == BTT_OK, "bttSet enable");
@@ -592,6 +805,7 @@ static void settings_preset(int version)
 		vals[BTT_KEY_QUALITY] = stored_quality(version);
 		vals[BTT_KEY_DISCONNECT] = BTT_DISC_SPEAKER;
 		vals[BTT_KEY_RECONNECT] = 1;
+		vals[BTT_KEY_AAC_BITRATE] = BTT_AACBR_192;
 	} else {
 		/* an older file ends before the newer keys: whatever follows in memory must not be read */
 		for (int i = keys; i < BTT_KEY_COUNT; i++)
@@ -600,10 +814,10 @@ static void settings_preset(int version)
 			vals[BTT_KEY_QUALITY] = stored_quality(version);   /* version 4: a file of the old order holding Best */
 	}
 	int n;
-	if (version == 5) {   /* a later version: 20 keys, the extra ones with values nobody here knows */
-		for (int i = BTT_KEY_COUNT; i < 20; i++)
+	if (version == 5) {   /* a later version: three keys more than this build has, with values nobody here knows */
+		for (int i = BTT_KEY_COUNT; i < BTT_KEY_COUNT + 3; i++)
 			vals[i] = 77;
-		n = build_file(buf, 20, vals, "FutureName", 20, 1);
+		n = build_file(buf, BTT_KEY_COUNT + 3, vals, "FutureName", BTT_KEY_COUNT + 3, 1);
 	} else if (version == 6) {
 		n = build_file(buf, keys, vals, "bad\tname", keys, 1);
 	} else if (version == 7) {
@@ -617,7 +831,7 @@ static void settings_preset(int version)
 	put_file(BTT_SETTINGS, buf, n);
 }
 
-typedef struct { int enable, sound, lat, band[5], chan, bal, curve, vmax, ctrl, qual, disc, rc, hfp; char name[BTT_NAME_MAX + 2]; } Want;
+typedef struct { int enable, sound, lat, band[5], chan, bal, curve, vmax, ctrl, qual, disc, rc, hfp, aptxhd, srconly; unsigned kbps; char name[BTT_NAME_MAX + 2]; } Want;
 
 /* the scenarios whose file carries every key that has a value of its own */
 static int full_file(const Scn *s) { return s->saved == 1 || s->saved >= 5; }
@@ -638,6 +852,9 @@ static void expect(const Scn *s, uint64_t us, Want *w)
 	w->qual = full_file(s) ? meant_quality(s->saved) : BTT_Q_STANDARD;
 	w->disc = full_file(s) ? BTT_DISC_SPEAKER : BTT_DISC_MUTE;
 	w->rc = full_file(s) ? 1 : 0;
+	w->kbps = full_file(s) && s->saved != 12 ? BTT_AACBR_KBPS(BTT_AACBR_192) : BTT_AACBR_KBPS(BTT_AACBR_256);   /* a file of 12 ends before the key */
+	w->aptxhd = 1;   /* no file has this key before this version: it is on */
+	w->srconly = 1;  /* ... and neither has this one */
 	w->hfp = s->saved == 13 ? 0 : BTT_HFP_MODE_ON;      /* the file's Read Headset Battery decides; a file without the key has it on */
 	strcpy(w->name, s->saved == 1 || (s->saved >= 8 && s->saved <= 13) ? "SavedName" : s->saved == 5 ? "FutureName" : "");
 	if (s->toggle && us >= US(62)) w->qual = BTT_Q_BALANCED;
@@ -648,16 +865,18 @@ static void expect(const Scn *s, uint64_t us, Want *w)
 	if (s->toggle && us >= US(65)) { w->chan = BTT_CH_MONO; w->bal = 2; }
 	if (s->toggle && us >= US(68)) { w->curve = BTT_VC_FINER; w->vmax = 3; }
 	if (s->toggle && us >= US(70)) w->sound = BTT_SOUND_BASS;
-	if (s->toggle && us >= US(75)) { w->sound = BTT_SOUND_CUSTOM; w->band[0] = 2; w->band[4] = 10; }
+	if (s->toggle && us >= US(75)) { w->sound = BTT_SOUND_CUSTOM; w->band[0] = 2; w->band[4] = 10; w->aptxhd = 0; w->srconly = 0; }
 	if (s->toggle && us >= US(64)) { w->disc = BTT_DISC_PAUSE; w->rc = 1; strcpy(w->name, "My Vita"); }
 	if (s->toggle && us >= US(72)) w->disc = BTT_DISC_SPEAKER;
 	if (s->toggle && us >= US(72)) w->name[0] = 0;      /* the console's own name spelled out is no name */
 	if (s->toggle && us >= US(74)) strcpy(w->name, "Second");
 	if (s->toggle && us >= US(66) && us < US(74)) w->hfp = 0;     /* Read Headset Battery off, then back on */
 	if (s->toggle && us >= US(67) && us < US(74)) w->hfp = 3;     /* a mode change made directly through BTT_KEY_HFP in between: the mode in force follows it */
+	if (s->toggle && us >= US(66)) w->kbps = BTT_AACBR_KBPS(BTT_AACBR_320);
 	if (s->toggle && us >= US(80)) w->enable = 0;
-	if (s->early && us >= US(20)) { w->lat = BTT_LAT_LOWEST; w->ctrl = BTT_CTRL_FAST; }
-	if (s->early && us >= US(25) && us < US(30)) w->enable = 0;
+	if (s->early == 1 && us >= US(20)) { w->lat = BTT_LAT_LOWEST; w->ctrl = BTT_CTRL_FAST; }
+	if (s->early == 1 && us >= US(25) && us < US(30)) w->enable = 0;
+	if (s->early == 2 && us < US(EARLY_OFF_UNTIL)) w->enable = 0;
 }
 
 static void run(const Scn *s)
@@ -676,6 +895,7 @@ static void run(const Scn *s)
 		/* The last start never finished: nothing runs, and the guard is lifted. */
 		CHECK(g_threads_created == 0, "a worker started after a failed start");
 		CHECK(g_nfix == 0 && g_neq == 0 && g_nvol == 0 && g_nqual == 0 && g_ndisc == 0 && g_nrc == 0 && g_nnm == 0, "Bluetooth touched after a failed start");
+		CHECK(g_aac_find == 0 && g_naac == 0 && g_apt_find == 0 && g_napt == 0 && g_ld_find == 0 && g_nld == 0, "an add-on was looked for or called after a failed start");
 		CHECK(guard_first_byte() == '0', "guard not cleared after the safe start");
 		CHECK(module_stop(0, NULL) == SCE_KERNEL_STOP_SUCCESS, "module_stop");
 		CHECK(g_nfix == 0 && g_neq == 0 && g_nvol == 0 && g_nqual == 0 && g_ndisc == 0 && g_nrc == 0 && g_nnm == 0, "stop after a failed start applied something");
@@ -683,6 +903,8 @@ static void run(const Scn *s)
 	}
 
 	CHECK(g_threads_created == 1, "worker not started");
+	CHECK(g_apt_find == g_aac_find && g_ld_find == g_aac_find, "the aptX and LDAC modules were looked for (%d, %d) on other passes than the AAC one (%d)", g_apt_find, g_ld_find, g_aac_find);
+	CHECK(g_aac_find == g_nfix, "the AAC module was looked for on %d passes, expected one on every pass of the early gate (%d)", g_aac_find, g_nfix);
 	CHECK(g_now >= US(s->end_sec), "run ended early at %llu s", (unsigned long long)(g_now / 1000000));
 	CHECK(g_guard_clear, "boot guard never cleared");
 	CHECK(guard_first_byte() == '0', "guard file not back to '0'");
@@ -714,6 +936,29 @@ static void run(const Scn *s)
 	      "first late call at %llu.%03llu s, expected near %llu s", (unsigned long long)(g_eq[0].us / 1000000),
 	      (unsigned long long)(g_eq[0].us / 1000 % 1000), (unsigned long long)(open_us / 1000000));
 
+	/* The add-ons' self-tests start from the early gate, not the late one: each asked once (the master switch is on at the gate in every scenario), in the
+	 * order AAC, aptX, LDAC, one at a time (the next only once the one before has its verdict, or BTT_SELFTEST_WAIT s after it was asked), and all done before
+	 * the late gate when the early one opened early enough. */
+	CHECK(g_naac == 1 && g_napt == 1 && g_nld == 1 && g_aac[0].on && g_apt[0].on && g_ld[0].on, "the add-ons' self-tests were asked %d, %d and %d times", g_naac, g_napt, g_nld);
+	uint64_t ask_us = s->early == 2 && US(EARLY_OFF_UNTIL) > early_us ? US(EARLY_OFF_UNTIL) : early_us;   /* with the master switch off nothing is asked */
+	CHECK(g_aac[0].us >= ask_us - 1000000 && g_aac[0].us <= ask_us + 1500000, "the AAC self-test was asked at %llu.%03llu s, expected near %llu s",
+	      (unsigned long long)(g_aac[0].us / 1000000), (unsigned long long)(g_aac[0].us / 1000 % 1000), (unsigned long long)(ask_us / 1000000));
+	{
+		uint64_t wait = selftest_stuck() ? US(BTT_SELFTEST_WAIT) : AAC_VERDICT_US;
+
+		CHECK(g_apt[0].us >= g_aac[0].us + wait && g_apt[0].us <= g_aac[0].us + wait + 1000000,
+		      "the aptX self-test was asked at %llu.%03llu s, the AAC one at %llu.%03llu s (verdict after %llu ms)", (unsigned long long)(g_apt[0].us / 1000000),
+		      (unsigned long long)(g_apt[0].us / 1000 % 1000), (unsigned long long)(g_aac[0].us / 1000000), (unsigned long long)(g_aac[0].us / 1000 % 1000),
+		      (unsigned long long)(wait / 1000));
+		CHECK(g_ld[0].us == g_apt[0].us, "the LDAC self-test was asked at %llu ms, the aptX one (done inside the ask) at %llu ms", (unsigned long long)(g_ld[0].us / 1000),
+		      (unsigned long long)(g_apt[0].us / 1000));
+		if (!selftest_stuck() && ask_us + US(3) < open_us)   /* the gates are not the same pass */
+			CHECK(g_ld[0].us <= ask_us + US(3) && g_ld[0].us < g_eq[0].us, "the self-tests were not all asked before the late gate (LDAC at %llu s, late gate at %llu s)",
+			      (unsigned long long)(g_ld[0].us / 1000000), (unsigned long long)(g_eq[0].us / 1000000));
+		CHECK(count_in_log("the AAC self-test has no verdict") == (selftest_stuck() ? 1 : 0) && count_in_log("the aptX self-test has no verdict") == 0 &&
+		      count_in_log("the LDAC self-test has no verdict") == 0, "the self-test wait was logged wrongly:\n%s", g_klog);
+	}
+
 	/* The arguments follow the settings, at every call. */
 	int seen[4] = { 0 };
 	for (int i = 0; i < g_nfix; i++) {
@@ -744,8 +989,13 @@ static void run(const Scn *s)
 		      g_vol[j].vmax, w.enable, w.curve, w.vmax);
 		CHECK(g_ndisc == g_neq && g_nrc == g_neq && g_nnm == g_neq, "disconnect, reconnect and name were called %d, %d and %d times", g_ndisc, g_nrc, g_nnm);
 		CHECK(g_disc[j].us == g_fix[i].us && g_rc[j].us == g_fix[i].us && g_nm[j].us == g_fix[i].us, "disconnect, reconnect and name were called at other times");
-		CHECK(g_disc[j].mode == (w.enable ? w.disc : BTT_DISC_MUTE), "disconnect call %d at %llu s: %d, expected %d", i,
-		      (unsigned long long)(g_fix[i].us / 1000000), g_disc[j].mode, w.enable ? w.disc : BTT_DISC_MUTE);
+		CHECK(g_disc[j].mode == (apply_hold() ? BTT_DISC_SPEAKER : w.enable ? w.disc : BTT_DISC_MUTE), "disconnect call %d at %llu s: %d, expected %d", i,
+		      (unsigned long long)(g_fix[i].us / 1000000), g_disc[j].mode, apply_hold() ? BTT_DISC_SPEAKER : w.enable ? w.disc : BTT_DISC_MUTE);   /* an apply in hand holds the no-mute mode whatever is set */
+		CHECK(g_napply == g_neq && g_apply[j].us == g_fix[i].us && g_apply[j].on == w.enable && g_apply[j].kbps == (int)w.kbps && g_apply[j].codec == g_stream[j].codec &&
+		      g_apply[j].accel == g_stream[j].accel && g_apply[j].quality == w.qual && g_apply[j].aptx_hd == w.aptxhd,
+		      "the apply pass was called with %d, %d, %d kb/s, %d, %d, aptX HD %d at call %d", g_apply[j].on, g_apply[j].codec, g_apply[j].kbps, g_apply[j].accel, g_apply[j].quality, g_apply[j].aptx_hd, i);
+		CHECK(g_naptxhd == g_neq && g_aptxhd_log[j] == w.aptxhd, "aptX HD When Available was given %d to the stream at call %d, expected %d", g_aptxhd_log[j], i, w.aptxhd);
+		CHECK(g_nsrconly == g_neq && g_srconly_log[j] == w.srconly, "Music Source Only was given %d to the stream at call %d, expected %d", g_srconly_log[j], i, w.srconly);
 		CHECK(g_rc[j].on == (w.enable && w.rc), "reconnect call %d at %llu s: %d, expected %d", i,
 		      (unsigned long long)(g_fix[i].us / 1000000), g_rc[j].on, w.enable && w.rc);
 		CHECK(!strcmp(g_nm[j].name, w.enable ? w.name : ""), "name call %d at %llu s: '%s', expected '%s'", i,
@@ -754,20 +1004,38 @@ static void run(const Scn *s)
 		      "the dual channel settings were called with %d at call %d", g_hq[j].level, i);
 		CHECK(g_nhfp == g_neq && g_hfp[j].us == g_fix[i].us && g_hfp[j].mode == (w.enable ? w.hfp : 0),
 		      "the headset battery code was called with mode %d at call %d, expected %d", g_hfp[j].mode, i, w.enable ? w.hfp : 0);
+		CHECK(g_nstream == g_neq && g_stream[j].us == g_fix[i].us && g_stream[j].on == w.enable &&
+		      (g_stream[j].accel == 0 || g_stream[j].accel == 1), "AAC streaming was called with %d, %d, %d at call %d", g_stream[j].on, g_stream[j].codec, g_stream[j].accel, i);
+		CHECK(g_nsetaac == g_nfix && g_nlat == g_neq && g_lat_level[j] == (w.enable ? w.lat : BTT_LAT_STANDARD),
+		      "the engine's output bound was given latency %d at call %d (expected %d), the codec flag %d times for %d passes", g_lat_level[j], i, w.enable ? w.lat : BTT_LAT_STANDARD, g_nsetaac, g_nfix);
+		CHECK(g_nkbps == g_neq && g_kbps_log[j] == w.kbps, "the AAC bit rate was given %u kb/s at call %d, expected %u", g_kbps_log[j], i, w.kbps);
+		CHECK(g_ncodecs == g_nlink, "the codec lists are looked at on every pass the link information is (%d, %d)", g_ncodecs, g_nlink);
+		CHECK(g_nfall == g_nlink, "the codec fallback notice is looked at on every pass the link information is (%d, %d)", g_nfall, g_nlink);
+		CHECK(g_nlink == g_neq && g_link[j].us == g_fix[i].us && g_link[j].on == w.enable && g_link[j].latency == (w.enable ? w.lat : 0),
+		      "the link information was called with %d, %d at call %d", g_link[j].on, g_link[j].latency, i);
 		CHECK(g_nflush == g_neq && g_flush[j].us == g_fix[i].us && g_flush[j].lowest == (w.enable && w.lat == BTT_LAT_LOWEST),
 		      "flush call %d at %llu s: %d, expected %d", i, (unsigned long long)(g_fix[i].us / 1000000), g_flush[j].lowest,
 		      w.enable && w.lat == BTT_LAT_LOWEST);
+		CHECK(g_nevlog == g_neq && g_evlog[j].us == g_fix[i].us && g_evlog[j].on == w.enable, "the link log was called with %d at call %d (expected %d)", g_evlog[j].on, i, w.enable);
 		seen[g_fix[i].us >= US(80) ? 3 : g_fix[i].us >= US(75) ? 2 : g_fix[i].us >= US(70) ? 1 : 0]++;
 	}
 	if (s->toggle) {   /* each phase was reached, and the refusals were tried */
 		CHECK(seen[0] && seen[1] && seen[2] && seen[3], "phases seen %d %d %d %d", seen[0], seen[1], seen[2], seen[3]);
 		CHECK(g_refused, "the refusals were not tried");
+		CHECK(g_refresh_taken == 1 && !g_refresh_pending, "the Refresh Codecs request reached the apply pass %d times", g_refresh_taken);
+		/* the refused second press is logged by the worker (the syscall cannot write the log) */
+		CHECK(count_in_log("Refresh Codecs pressed while the last request was in hand: refused (1)") == 1 && count_in_log("start-up period: refused") == 0,
+		      "the refused press was logged wrongly:\n%s", g_klog);
 		/* the skip reasons: one line each, however often they were reported, and none for a reason never reported */
 		CHECK(count_in_log("settings page: entry not added (page too large)") == 1 &&
 		      count_in_log("settings page: entry not added (anchor missing)") == 1 &&
 		      count_in_log("settings page: entry not added (no memory)") == 1 &&
-		      count_in_log("settings page: entry not added") == 3, "the page skip reasons were logged wrongly:\n%s", g_klog);
+		      count_in_log("settings page: entry not added (device rows: closing tag missing)") == 1 &&
+		      count_in_log("settings page: entry not added (device rows: no room)") == 1 &&
+		      count_in_log("settings page: entry not added") == 5, "the page skip reasons were logged wrongly:\n%s", g_klog);
 	}
+	if (s->early == 1)
+		CHECK(count_in_log("Refresh Codecs pressed in the start-up period: refused (1)") == 1, "the press in the start-up period was not logged once:\n%s", g_klog);
 	if (s->saved) {
 		/* what the file gave is what the first call got (the name included) */
 		Want w;
@@ -784,7 +1052,7 @@ static void run(const Scn *s)
 		for (int i = 0; i < g_neq; i++)
 			CHECK(g_eq[i].chan == BTT_CH_STEREO &&
 			      g_eq[i].bal == BTT_BAL_CENTRE && g_vol[i].curve == BTT_VC_STANDARD && g_vol[i].vmax == 0 && g_qual[i].level == BTT_Q_STANDARD && g_hq[i].level == BTT_Q_STANDARD &&
-			      g_disc[i].mode == BTT_DISC_MUTE && g_rc[i].on == 0 && g_nm[i].name[0] == 0,
+			      g_disc[i].mode == (apply_hold() ? BTT_DISC_SPEAKER : BTT_DISC_MUTE) && g_rc[i].on == 0 && g_nm[i].name[0] == 0,
 			      "a default setting is not the stock argument (call %d)", i);
 	}
 
@@ -799,6 +1067,10 @@ static void run(const Scn *s)
 		CHECK(buf[3 + BTT_KEY_COUNT + BTT_NAME_MAX / 4] == BTT_QUAL_MAGIC, "the saved file has no marker of the quality order");
 		CHECK(buf[2 + BTT_KEY_DISCONNECT] == BTT_DISC_SPEAKER && buf[2 + BTT_KEY_RECONNECT] == 1, "the saved disconnect or reconnect wrong");
 		CHECK(buf[2 + BTT_KEY_LOWBATT] == 1 && buf[2 + BTT_KEY_HFP] == BTT_HFP_MODE_ON, "the saved battery keys wrong");
+		CHECK(buf[2 + BTT_KEY_CODEC] == BTT_CODEC_AAC && buf[2 + BTT_KEY_AAC_ACCEL] == 0 && buf[2 + BTT_KEY_AAC_BITRATE] == BTT_AACBR_320,
+		      "the saved AAC keys wrong");
+		CHECK(buf[2 + BTT_KEY_APTX_HD] == 0, "the saved aptX HD When Available wrong (%d)", buf[2 + BTT_KEY_APTX_HD]);
+		CHECK(buf[2 + BTT_KEY_SOURCE_ONLY] == 0, "the saved Music Source Only wrong (%d)", buf[2 + BTT_KEY_SOURCE_ONLY]);
 		CHECK(buf[2 + BTT_KEY_ENABLE] == 0 && buf[2 + BTT_KEY_LOWLAT] == 2 && buf[2 + BTT_KEY_SOUND] == BTT_SOUND_CUSTOM &&
 		      buf[2 + BTT_KEY_BAND1] == 2 && buf[2 + BTT_KEY_BAND5] == 10 && buf[2 + BTT_KEY_CHANNELS] == BTT_CH_MONO &&
 		      buf[2 + BTT_KEY_BALANCE] == 2 && buf[2 + BTT_KEY_VOLCURVE] == BTT_VC_FINER && buf[2 + BTT_KEY_VOLMAX] == 3 &&
@@ -817,7 +1089,11 @@ static void run(const Scn *s)
 	      g_disc_restore, g_rc_restore, g_nm_restore);
 	CHECK(g_hq_restore == 1, "High and Highest were not restored at stop");
 	CHECK(g_flush_restore == 1, "the flush timeout was not restored at stop");
+	CHECK(g_evlog_restore == 1, "the link log was not stopped at stop");
 	CHECK(g_hfp_restore == 1, "the headset battery code was not restored at stop");
+	CHECK(g_stream_restore == 1 && g_stream_restore_first, "AAC streaming was not restored once, before every other change, at stop");
+	CHECK(g_stream_wait_fast > 0 || S->end_sec < 72, "the worker never looked every 0.1 s while an AAC stream was configured");
+	CHECK(g_evlog_wait_fast > 0 || S->end_sec < 86, "the worker never looked every 0.1 s while a link was new");
 	if (s->saved == 12)
 		CHECK(bttGet(BTT_KEY_LOWBATT) == 1 && bttGet(BTT_KEY_READBATT) == 1 && bttGet(BTT_KEY_HFP) == BTT_HFP_MODE_ON,
 		      "the keys a file from an earlier build lacks or holds as off are not on");
@@ -855,6 +1131,7 @@ int main(void)
 		{ "early: Home screen found at 30 s",   3,   30,  90,  0,   0,    0,  0 },
 		{ "early: Home screen found at 41 s",   3,   41,  90,  0,   0,    0,  0 },
 		{ "early: no Home screen, guard at 33 s", 3,  -1,  90,  0,   0,    0,  0 },
+		{ "early: Bluetooth Turbo off until 20 s", 3, 5,  90,  0,   0,    0,  2 },
 	};
 	int fails = 0, n = (int)(sizeof(scn) / sizeof(scn[0]));
 

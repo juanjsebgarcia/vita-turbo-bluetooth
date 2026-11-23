@@ -34,23 +34,17 @@
 #include <taihen.h>
 
 #include "../include/bluetoothturbo.h"
+#include "btcall.h"
 #include "btreconn.h"
 #include "btreconn_hook.h"
 #include "klog.h"
 
-int module_get_export_func(SceUID pid, const char *modname, uint32_t libnid, uint32_t funcnid, uintptr_t *func);
 int ksceKernelUnregisterSysEventHandler(SceUID uid);   /* not in the SDK header; the stub library has it */
 
 #define LIB_BT_FOR_DRIVER    0xD48CA62D    /* SceBtForDriver, as SceAVConfig imports it                  */
 #define NID_START_AUDIO      0x8D47CABDu   /* ksceBtStartAudio(address 0, address 1, flags, ...)          */
-#define NID_START_CONNECT    0x6059113Au   /* ksceBtStartConnect(address 0, address 1)                    */
-#define NID_GET_CONNINFO     0xE9936446u   /* ksceBtGetConnectingInfo(address 0, address 1)               */
-#define NID_GET_CONFIG       0x94C66A3Bu   /* ksceBtGetConfiguration(): the Bluetooth state word's low byte */
 
-#define BT_UP(w)             (((w) & 0x38) == 8)
-#define STATE_NO_LINK        1             /* ksceBtGetConnectingInfo: the device has no link             */
-#define LOCK_PRIO            0x40          /* the worker's priority while it holds the Bluetooth code's lock */
-#define WORKER_PRIO          0x70
+#define STATE_NO_LINK        BTCALL_STATE_NO_LINK   /* ksceBtGetConnectingInfo: the device has no link     */
 
 #define SETTLE_US      (3 * 1000000ull)    /* after Bluetooth is up: headphones that reconnect by themselves win */
 #define RETRY_US       (5 * 1000000ull)    /* between the two attempts                                    */
@@ -61,9 +55,6 @@ int ksceKernelUnregisterSysEventHandler(SceUID uid);   /* not in the SDK header;
 
 enum { PH_IDLE = 0, PH_WAIT_UP, PH_SETTLE, PH_RETRY };
 
-static int (*gr_start_connect)(unsigned, unsigned);
-static int (*gr_get_conninfo)(unsigned, unsigned);
-static int (*gr_get_config)(void);
 static SceUID gr_hook = -1, gr_sev = -1;
 static int gr_failed;                  /* installing was refused: not tried again until it is switched off and on */
 static int gr_phase;
@@ -71,30 +62,12 @@ static uint64_t gr_phase_at, gr_session_at;
 static int gr_attempts;
 static uint32_t gr_wakes_seen, gr_rec_at_wake;
 
-static int rc_lookup(void)
-{
-	uintptr_t f = 0;
-
-	if (module_get_export_func(KERNEL_PID, "SceBt", LIB_BT_FOR_DRIVER, NID_START_CONNECT, &f) < 0 || !f)
-		return -1;
-	gr_start_connect = (int (*)(unsigned, unsigned))f;
-	f = 0;
-	if (module_get_export_func(KERNEL_PID, "SceBt", LIB_BT_FOR_DRIVER, NID_GET_CONNINFO, &f) < 0 || !f)
-		return -1;
-	gr_get_conninfo = (int (*)(unsigned, unsigned))f;
-	f = 0;
-	if (module_get_export_func(KERNEL_PID, "SceBt", LIB_BT_FOR_DRIVER, NID_GET_CONFIG, &f) < 0 || !f)
-		return -1;
-	gr_get_config = (int (*)(void))f;   /* last: set only when all three are found */
-	return 0;
-}
-
 /* The three calls, the hook and the handler; 0 if all are in. Each step is skipped if it is already done, so
  * a half-installed state is finished or refused as a whole. A hook or handler that did get in stays in
  * (passing through, and counting nothing while not armed) and is released at module stop. */
 static int rc_install(void)
 {
-	if (!gr_get_config && rc_lookup() < 0) {
+	if (btcall_find() < 0) {
 		BTT_KLOG("bluetooth reconnect: the Bluetooth code's connect calls were not found - off");
 		return -1;
 	}
@@ -122,36 +95,10 @@ static int rc_install(void)
 	return 0;
 }
 
-/* The three calls take the Bluetooth code's lock: at a raised priority, so nothing preempts us holding it. */
-static int rc_bt_up(void)
-{
-	int w;
-
-	ksceKernelChangeThreadPriority(0, LOCK_PRIO);
-	w = gr_get_config();
-	ksceKernelChangeThreadPriority(0, WORKER_PRIO);
-	return w >= 0 && BT_UP(w);
-}
-
-static int rc_state(uint32_t mac0, uint32_t mac1)
-{
-	int s;
-
-	ksceKernelChangeThreadPriority(0, LOCK_PRIO);
-	s = gr_get_conninfo(mac0, mac1);
-	ksceKernelChangeThreadPriority(0, WORKER_PRIO);
-	return s;
-}
-
-static int rc_connect(uint32_t mac0, uint32_t mac1)
-{
-	int r;
-
-	ksceKernelChangeThreadPriority(0, LOCK_PRIO);
-	r = gr_start_connect(mac0, mac1);
-	ksceKernelChangeThreadPriority(0, WORKER_PRIO);
-	return r;
-}
+/* The three calls take the Bluetooth code's lock: btcall.c raises the priority around each. */
+static int rc_bt_up(void) { return btcall_up(); }
+static int rc_state(uint32_t mac0, uint32_t mac1) { return btcall_state(mac0, mac1); }
+static int rc_connect(uint32_t mac0, uint32_t mac1) { return btcall_connect(mac0, mac1); }
 
 /* The noted address, read twice so a half-written one (the hook's two stores) is never used. */
 static int rc_mac(uint32_t *m0, uint32_t *m1)
@@ -263,6 +210,11 @@ void btt_btreconn_sync(int on)
 		}
 	}
 	rc_step(now);
+}
+
+int btt_btreconn_busy(void)
+{
+	return gr_phase != PH_IDLE;
 }
 
 void btt_btreconn_restore(void)

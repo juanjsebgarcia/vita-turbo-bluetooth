@@ -9,6 +9,9 @@
  * when nothing changes. */
 void btt_btdisc_sync(int mode);
 
+/* The mode in force now (BttDisconnect; 0 = none, the console's own mute), as the change in the audio policy's code stands, not as it was asked for. */
+int btt_btdisc_in(void);
+
 /* Module stop: the original bytes back. */
 void btt_btdisc_restore(void);
 

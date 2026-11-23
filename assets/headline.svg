@@ -51,6 +51,7 @@
       .lbl  { font-size: 19px; font-weight: 600; fill: #effcff; }
       .sub  { font-size: 14px; font-weight: 400; fill: #a3dbea; }
       .badge{ font-size: 17px; font-weight: 700; fill: #ffffff; letter-spacing: 0.4px; }
+      .chip { font-size: 16px; font-weight: 800; fill: #ffffff; letter-spacing: 0.3px; }
     </style>
   </defs>
 
@@ -114,7 +115,7 @@
     <text class="t" x="82" y="468"><tspan class="big">−69</tspan><tspan class="unit"> %</tspan></text>
     <text class="t" x="357" y="468"><tspan class="big">−100</tspan><tspan class="unit"> %</tspan></text>
     <text class="t" x="907" y="468"><tspan class="big">+88</tspan><tspan class="unit"> %</tspan></text>
-    <text class="t" x="907" y="244"><tspan class="big">Mono</tspan></text>
+    <text class="t" x="907" y="244"><tspan class="big">+3</tspan><tspan class="unit"> codecs</tspan></text>
     <text class="t" x="632" y="468"><tspan class="big">−100</tspan><tspan class="unit"> %</tspan></text>
   </g>
 
@@ -138,13 +139,22 @@
   <text class="t lbl" x="357" y="529">delay</text>
   <text class="t sub" x="357" y="554">up to 11.25 ms → none</text>
   <text class="t sub" x="357" y="572">(DS3/DS4)</text>
+  <!-- codecs tile: names as plain typographic chips, no logos -->
+  <g>
+    <rect x="907" y="260" width="54" height="28" rx="14" fill="#ffffff" fill-opacity="0.16" stroke="#c9fbff" stroke-opacity="0.6"/>
+    <text class="t chip" x="934" y="280" text-anchor="middle">AAC</text>
+    <rect x="969" y="260" width="66" height="28" rx="14" fill="#ffffff" fill-opacity="0.16" stroke="#c9fbff" stroke-opacity="0.6"/>
+    <text class="t chip" x="1002" y="280" text-anchor="middle">aptX™</text>
+    <rect x="1043" y="260" width="74" height="28" rx="14" fill="#ffffff" fill-opacity="0.16" stroke="#c9fbff" stroke-opacity="0.6"/>
+    <text class="t chip" x="1080" y="280" text-anchor="middle">LDAC™</text>
+  </g>
+  <text class="t lbl" x="907" y="311">alongside SBC</text>
+  <text class="t sub" x="907" y="332">better sound or less delay,</text>
+  <text class="t sub" x="907" y="350">auto-detected add-ons</text>
   <text class="t lbl" x="907" y="506">more bit rate with</text>
   <text class="t lbl" x="907" y="529">Highest</text>
   <text class="t sub" x="907" y="554">~357 → ~670 kb/s</text>
   <text class="t sub" x="907" y="572">each ear separately</text>
-  <text class="t lbl" x="907" y="282">swap sides, 9-step</text>
-  <text class="t lbl" x="907" y="305">balance</text>
-  <text class="t sub" x="907" y="330">one earbud, or one ear</text>
   <text class="t lbl" x="632" y="506">fewer drop-outs with</text>
   <text class="t lbl" x="632" y="529">the new Stable profile</text>
   <text class="t sub" x="632" y="554">up to ~4300 a minute → 0,</text>

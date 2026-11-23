@@ -11,6 +11,7 @@
 #define BTT_KLOG_MAX_BYTES  (64 * 1024)
 
 void btt_klog_init(void);
+/* one line (at most 250 bytes of it are written; the BTT_KLOG macro itself builds 191) */
 void btt_klog_line(const char *line);
 
 #define BTT_KLOG(...) do { char _l[192]; snprintf(_l, sizeof(_l), __VA_ARGS__); btt_klog_line(_l); } while (0)

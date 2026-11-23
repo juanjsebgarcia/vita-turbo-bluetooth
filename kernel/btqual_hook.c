@@ -11,10 +11,14 @@
  * headphones allow, so the encoder's range stays valid. With no cap (Standard) and no dual channel setting nothing is
  * written: the hook only reads, and the connection is exactly the console's own.
  *
+ * AAC streaming (btaac_hook.h, H2) shares the hook too: once the original has run on the SBC choice, the stream record of a sink that offered AAC is
+ * rewritten into the AAC configuration; it does nothing at all for any connection the AAC code did not mark.
+ *
  * High and Highest (bthq.c) share the hook: for them the offer the headphones made is first changed so that the
  * console's own order of channel modes lands on dual channel, and the stored highest bitpool is then capped for it.
  */
 #include "btqual_hook.h"
+#include "btaac_hook.h"
 
 #define REF_SPINS  200000u       /* loads, no system call: about a millisecond at most */
 #define BAD_STATE  0x802F1901    /* the error SceBt itself returns when it cannot do the call (as btvol_hook.c) */
@@ -87,6 +91,7 @@ int btqual_hook(void *conn, uint32_t flags, const void *caps, uint32_t len)
 		(void)r;
 	}
 	ret = TAI_CONTINUE(int, ref, conn, flags, caps, len);
+	btaac_h2_after(conn, flags, (void *)caps, len);   /* AAC streaming: the configuration the code just narrowed from the SBC choice, replaced (btaac_hook.h) */
 	if (conn && (flags & FLAG_APPLY)) {
 		volatile uint32_t *bp = (volatile uint32_t *)((uint8_t *)conn + C_MINBP);   /* [0] lowest, [1] highest */
 		uint32_t cap = btqual_cap;

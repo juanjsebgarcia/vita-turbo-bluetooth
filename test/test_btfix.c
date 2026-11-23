@@ -252,6 +252,49 @@ static void test_latency_levels(void)
 	CHECK(stock() && g_releases == g_injects, "module stop from Lowest (%d/%d)", g_releases, g_injects);
 }
 
+/* Latency on an AAC stream: one setting, other numbers (btaac_lat.h: an AAC packet is 21.3 ms of sound, an SBC one 10.7 ms): Standard 11 (the stock 23 is written
+ * over), Low 5, Lowest 3, changing between them and between the codecs in either order, and every way back is byte for byte stock. SBC is as it was. */
+static void test_latency_aac(void)
+{
+	make_text(0, 0);
+	btt_bt_sync(1, BTT_LAT_STANDARD, 0);
+	btt_bt_set_aac(1);                     /* the stream becomes AAC at Standard: 11 */
+	btt_bt_sync(1, BTT_LAT_STANDARD, 0);
+	CHECK(q_is(11), "AAC at Standard is 11, not %d", g_text_mem[OFF_QUEUE]);
+	int w = g_injects;
+	btt_bt_sync(1, BTT_LAT_STANDARD, 0);
+	CHECK(g_injects == w, "written again");
+	btt_bt_sync(1, BTT_LAT_LOW, 0);
+	CHECK(q_is(5), "AAC at Low is 5, not %d", g_text_mem[OFF_QUEUE]);
+	btt_bt_sync(1, BTT_LAT_LOWEST, 0);
+	CHECK(q_is(3), "AAC at Lowest is 3, not %d", g_text_mem[OFF_QUEUE]);
+	btt_bt_set_aac(0);                     /* the stream is SBC again: the SBC limit for the same setting */
+	btt_bt_sync(1, BTT_LAT_LOWEST, 0);
+	CHECK(q_is(7), "SBC at Lowest is 7, not %d", g_text_mem[OFF_QUEUE]);
+	btt_bt_sync(1, BTT_LAT_LOW, 0);
+	CHECK(q_is(11), "SBC at Low is 11");
+	btt_bt_sync(1, BTT_LAT_STANDARD, 0);
+	CHECK(q_is(23) && ts_is_fixed(), "SBC at Standard is the stock 23 again");
+	btt_bt_set_aac(1);
+	btt_bt_sync(1, BTT_LAT_LOW, 0);
+	btt_bt_set_aac(0);
+	btt_bt_sync(1, BTT_LAT_STANDARD, 0);
+	CHECK(q_is(23), "AAC Low, then SBC Standard: 23");
+	btt_bt_set_aac(1);
+	btt_bt_sync(1, BTT_LAT_LOW, 0);
+	btt_bt_set_aac(0);                     /* the master switch off: main.c says the stream is not AAC then (Standard would otherwise be 11) */
+	btt_bt_sync(0, BTT_LAT_STANDARD, 0);
+	CHECK(stock(), "not stock after switching off on an AAC stream");
+	btt_bt_set_aac(1);
+	btt_bt_sync(1, BTT_LAT_LOWEST, 0);
+	CHECK(q_is(3), "AAC Lowest from stock");
+	btt_bt_restore();                      /* module stop: stock, and the codec flag forgotten */
+	CHECK(stock() && g_releases == g_injects, "module stop from AAC Lowest (%d/%d)", g_releases, g_injects);
+	btt_bt_sync(1, BTT_LAT_LOW, 0);
+	CHECK(q_is(11), "after the stop the stream is not AAC until said so: Low is 11");
+	btt_bt_restore();
+}
+
 /* Controller response: Standard writes nothing; Fast writes 0 at both places, both or neither. */
 static void test_ctrl_fast(void)
 {
@@ -365,6 +408,7 @@ int main(int argc, char **argv)
 		{ "refuses when its code address is missing", test_offset_fails },
 		{ "a failed write is not retried every pass", test_failed_write_not_retried },
 		{ "latency: Standard, Low, Lowest, every way back", test_latency_levels },
+		{ "latency on an AAC stream: 11, 5, 3; SBC unchanged; every way back", test_latency_aac },
 		{ "controller response: Fast in and out at both places", test_ctrl_fast },
 		{ "controller code not recognised: only that setting is out", test_ctrl_unrecognised },
 		{ "controller and latency refusals: never half, retried after a change", test_ctrl_failures },

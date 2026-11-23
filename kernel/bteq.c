@@ -21,6 +21,7 @@
 #include "../include/bluetoothturbo.h"
 #include "bteq.h"
 #include "bteq_hook.h"
+#include "btaac_stream.h"
 #include "hpgains.h"
 #include "klog.h"
 
@@ -84,6 +85,7 @@ void btt_bteq_sync(const int *settings)
 	int want = btt_hp_gains(settings, gain);   /* zeros when Bluetooth Turbo is off */
 
 	want |= btt_hp_mix(settings, &mode, &bal); /* stereo, centre when Bluetooth Turbo is off */
+	want |= btt_aac_stream_wants_pcm_hook();   /* AAC streaming hands the engine every block from this hook (a flat filter passes them on untouched) */
 	if (!want) {
 		g_failed = 0;   /* a failed install may be tried again after off and on */
 		/* Flat, and the hook stays: a hook in the sender's path is never released while
@@ -121,6 +123,11 @@ void btt_bteq_sync(const int *settings)
 		g_logged_block = 1;
 		BTT_KLOG("bluetooth sound: first block filtered");
 	}
+}
+
+int btt_bteq_hook_in(void)
+{
+	return g_hook >= 0;
 }
 
 void btt_bteq_restore(void)

@@ -11,12 +11,18 @@
 # The encoder hook (kernel/btqual_hook.c), the reconnect hook and standby handler (kernel/btreconn_hook.c) and the flush timeout's hooks
 # (kernel/btflush_hook.c) are checked the same way: the first two with the default lists above, the last with
 #   BTEQ_REQUIRED="btflush_start_hook btflush_stop_hook btflush_evt_hook" BTEQ_ALLOWED_CALLS=none
+# The sound filter's hook also hands each block to the AAC engine's ring (btt_aac_push_pcm, a leaf of its own: kernel/btaac_link_leaf.c; an LDAC stream's block goes to btt_ldac_push_pcm, kernel/btldac_link_leaf.c). The AAC stream
+# hooks (kernel/btaac_hook.c) are checked with
+#   BTEQ_REQUIRED="btaac_disp_hook btaac_send_hook" BTEQ_ALLOWED_CALLS="btt_aac_pop_au btt_aac_au_trim btt_aac_au_depth ksceKernelGetSystemTimeLow"
+# BTEQ_IGNORE_FUNCS names the functions of an object whose calls are not checked because they never run in the hook's thread (nothing uses it now: the aptX encoders
+# in third_party/aptxenc call nothing but each other, start-up included, and are checked whole).
 # Run by the build after the link:
 #   check_bteq_leaf.sh bteq_run.c.obj bteq_hook.c.obj btvol_map.c.obj btvol_hook.c.obj btqual_hook.c.obj btreconn_hook.c.obj
 set -eu
 OBJDUMP="${OBJDUMP:-arm-vita-eabi-objdump}"
 [ -n "$OBJDUMP" ] || OBJDUMP=arm-vita-eabi-objdump
-ALLOWED="${BTEQ_ALLOWED_CALLS:-bq_process ksceKernelGetSystemTimeLow bv_send_map bv_read_map}"
+IGNORE="${BTEQ_IGNORE_FUNCS:-}"
+ALLOWED="${BTEQ_ALLOWED_CALLS:-bq_process ksceKernelGetSystemTimeLow bv_send_map bv_read_map btt_aac_push_pcm btt_ldac_push_pcm}"
 REQUIRED="${BTEQ_REQUIRED:-bteq_hook bq_process btvol_send_hook btvol_read_hook bv_send_map bv_read_map btqual_hook btreconn_hook btreconn_sysevent}"
 VEC='[[:space:]]v(ld|st|mov|add|sub|mul|cvt|cmp|dup|and|orr|eor|ext|zip|swp|rev|shl|shr|push|pop|mrs|msr|abs|neg|sqrt|div|fma|nmul|nmla|nmls|mla|mls|rec|rsq|sel|max|min|bic|bsl|bif|bit|tbl|trn|uzp|qadd|qsub|qmov)[a-z0-9.]*[[:space:]]'
 dump=""
@@ -46,6 +52,9 @@ calls="$(printf '%s\n' "$dump" | awk '
 echo "$calls" | while read -r fn target; do
   [ -n "$fn" ] || continue
   ok=0
+  for i in $IGNORE; do
+    [ "$fn" = "$i" ] && ok=1
+  done
   for a in $ALLOWED; do
     [ "$target" = "$a" ] && ok=1
   done

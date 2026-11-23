@@ -39,6 +39,7 @@
 #include "../kernel/hpgains.c"
 #include "../kernel/bteq_plan.c"
 #include "../kernel/bteq_run.c"
+#include "../kernel/btaac_neg.c"     /* the AAC stream state the sender's hook reads */
 #include "../kernel/bteq_hook.c"
 
 #define CHECK(c, ...) do { if (!(c)) { \
@@ -93,6 +94,22 @@ void btt_klog_line(const char *line)
 	if (getenv("BTT_TEST_VERBOSE"))
 		printf("    %s\n", line);
 }
+
+/* The AAC stream, fakes (btaac_stream.c and the engine's leaf, tested in test_btaac_stream.c): the sender's hook hands a block to the engine only while the
+ * stream is AAC and running and started; whether the hook must be installed for it is the stream's say. */
+static int g_aac_wants;
+int btt_aac_stream_wants_pcm_hook(void) { return g_aac_wants; }
+static struct { int calls; uint32_t frames; int16_t first[2]; const int16_t *ptr; } g_push;
+uint32_t btt_aac_push_pcm(const int16_t *pcm, uint32_t frames)
+{
+	g_push.calls++;
+	g_push.frames = frames;
+	g_push.ptr = pcm;
+	memcpy(g_push.first, pcm, sizeof(g_push.first));
+	return frames;
+}
+
+uint32_t btt_ldac_push_pcm(const int16_t *pcm, uint32_t frames) { (void)pcm; return frames; }   /* an LDAC stream's block: tested in test_btaac_stream.c */
 
 #include "../kernel/bteq.c"
 
@@ -805,6 +822,67 @@ static void test_mix_hook(void)
 	CHECK(g_seen_data[0] == g_seen_data[1], "the sides differ under Mono");
 }
 
+/* AAC streaming: the block as it goes on to the original (after the filter) is handed to the engine, once, only when every condition holds. */
+static void test_aac_feed(void)
+{
+	static int16_t blk[BQ_FRAMES * 2];
+	static const int flat[5] = { 0 };
+	static uint8_t conn[0x4000];
+	int16_t copy[BQ_FRAMES * 2];
+
+	fill_mixed(blk);
+	memcpy(copy, blk, sizeof(copy));
+	bteq_ref = (tai_hook_ref_t)fake_original;
+	bq_init(&bteq_eq);
+	{ BqSet s; bq_plan(flat, &s); bq_plan_mix(&s, BQ_MIX_STEREO, BQ_BAL_CENTRE); CHECK(!bq_publish(&bteq_eq, &s), "publish"); }
+	btaac_neg.conn = (uintptr_t)conn;
+	*(uint32_t *)(conn + BTAAC_C_PROFILES) = BTAAC_PROF_STARTED;
+
+	/* nothing set: the block goes on alone */
+	g_clock_us += 10667;
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 0, "no AAC stream: the engine was fed");
+	/* each condition missing in turn */
+	btaac_neg.pcm_gate = 1;
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 0, "the stream is not AAC (state NONE): the engine was fed");
+	btaac_neg.state = BTAAC_N_CONFIGURED;
+	*(uint32_t *)(conn + BTAAC_C_PROFILES) = 0;
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 0, "the stream is not started: the engine was fed");
+	*(uint32_t *)(conn + BTAAC_C_PROFILES) = BTAAC_PROF_STARTED;
+	btaac_neg.pcm_gate = 0;
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 0, "the session is not running: the engine was fed");
+	btaac_neg.pcm_gate = 1;
+	btaac_neg.conn = 0;
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 0, "no connection known: the engine was fed");
+	btaac_neg.conn = (uintptr_t)conn;
+	/* a block of another length or an unaligned one is not PCM we know: never given to the engine */
+	CHECK(bteq_hook(0, 0, blk, 0xF0) == g_orig_ret && bteq_hook(0, 0, (char *)blk + 1, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 0, "another length or alignment was fed");
+	/* all conditions: the block, 512 frames, exactly what the original was given */
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 1 && g_push.frames == 512 && g_push.ptr == g_seen_buf,
+	      "the engine got %d blocks of %u frames, the original's own buffer: %d", g_push.calls, (unsigned)g_push.frames, g_push.ptr == g_seen_buf);
+	/* through a filter that changes the block (Mono): the filtered block is what the engine gets, the sender's is untouched */
+	{ BqSet s; bq_plan(flat, &s); bq_plan_mix(&s, BQ_MIX_MONO, BQ_BAL_CENTRE); CHECK(!bq_publish(&bteq_eq, &s), "publish"); }
+	g_clock_us += 10667;
+	CHECK(bteq_hook(0, 0, blk, BQ_BLOCK_BYTES) == g_orig_ret && g_push.calls == 2 && g_push.ptr == bteq_eq.out && g_push.first[0] == g_push.first[1] &&
+	      !memcmp(blk, copy, sizeof(copy)), "the engine did not get the filtered block");
+	/* the installer: the hook goes in because AAC wants it, with a flat filter */
+	{
+		int st[BTT_KEY_COUNT];
+
+		memset(&g_tai, 0, sizeof(g_tai));
+		btt_bteq_restore();
+		memset(&g_tai, 0, sizeof(g_tai));
+		settings(st, 1, BTT_SOUND_ORIGINAL);
+		btt_bteq_sync(st);
+		CHECK(g_tai.calls == 0, "the sender's hook went in with nothing wanted");
+		g_aac_wants = 1;
+		btt_bteq_sync(st);
+		CHECK(g_tai.calls == 1, "AAC streaming wants the sender's hook: %d installs", g_tai.calls);
+		g_aac_wants = 0;
+		btt_bteq_sync(st);
+		CHECK(g_tai.calls == 1 && g_tai.releases == 0, "a hook in the sender's path stays in (passing through)");
+	}
+}
+
 static void test_hp_mix(void)
 {
 	int st[BTT_KEY_COUNT], mode, bal;
@@ -940,6 +1018,7 @@ int main(int argc, char **argv)
 		{ "channels and balance: the plan", test_mix_plan },
 		{ "channels and balance: mono, swap, balance on real blocks", test_mix_run },
 		{ "channels and balance: through the hook", test_mix_hook },
+		{ "AAC streaming: the engine's feed from the hook", test_aac_feed },
 		{ "channels and balance: from the settings", test_hp_mix },
 		{ "installer: channels and balance", test_installer_mix },
 		{ "cost", test_cost },

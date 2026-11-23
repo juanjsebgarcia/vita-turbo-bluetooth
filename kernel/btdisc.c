@@ -139,6 +139,11 @@ void btt_btdisc_sync(int mode)
 	}
 }
 
+int btt_btdisc_in(void)
+{
+	return gd_in;
+}
+
 void btt_btdisc_restore(void)
 {
 	for (int m = 0; m < BTT_DISC_COUNT; m++)

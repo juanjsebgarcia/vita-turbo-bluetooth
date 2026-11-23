@@ -13,10 +13,12 @@
  * format "122": right for an event about one link, wrong for an event about two (a headphone link and a
  * controller): it reads the second handle as the first link's count, and never sees the second link's
  * count at all, so a media packet's completion can be lost and the count of packets in flight stays
- * high. The guard hands such an event to the original as one well-formed one-link event per link. An event
+ * high. The hook also hands every event to the link log's leaf (btevlog_hook.c), which stores the few that
+ * concern a link in a ring. The guard hands such an event to the original as one well-formed one-link event per link. An event
  * about one link, or one that is not a well-formed list, goes to the original untouched.
  */
 #include "btflush_hook.h"
+#include "btevlog_hook.h"
 
 #define REF_SPINS    200000u    /* loads, no system call                                  */
 #define MASK_A2DP    0x8u       /* the mask bit of the A2DP source stream                 */
@@ -89,6 +91,7 @@ void btflush_evt_hook(uint32_t *ctx, const uint8_t *ev, int len)
 	if (!ref)
 		return;   /* never set: nothing to pass on through; only in the moment the hook goes live */
 	btflush_in_evt = 1;
+	btevlog_note_hci(ev, len);   /* the link log: one store into a ring (btevlog_hook.c), nothing when it is off */
 	/* event code, parameter length, then Num_Handles, the handles (2 bytes each) and the counts (2 each) */
 	if (len >= 3 && ev[0] == EVT_NOCP) {
 		uint32_t n = ev[2];
