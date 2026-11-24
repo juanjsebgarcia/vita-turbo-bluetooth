@@ -26,6 +26,23 @@ A taiHEN plugin (kernel, Settings and Home screen modules) for HENkaku/Ensō on 
 > the new connection.** Without that, it won't report its battery level, and a headset
 > that offers only hands-free won't give the Vita its microphone.
 
+> [!WARNING]
+> **The AAC, aptX™ and LDAC™ add-ons are unofficial, optional and opt-in.**
+>
+> - They are unofficial ports of open-source encoders that their authors released under the
+>   Apache License 2.0 ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). They are not made,
+>   certified, endorsed or supported by the owners of those codecs or their trade marks, or by
+>   Sony Interactive Entertainment.
+> - They are separate downloads and are off unless you install them and add them to your
+>   `config.txt` yourself. Bluetooth Turbo works fully without them, on the Vita's own SBC codec.
+> - They come **with no warranty of any kind**, from me, from the encoders' authors or from the
+>   trade-mark holders. No patent or trade-mark licence is given or implied; the names are used
+>   only to say which codec an add-on is compatible with.
+> - Bluetooth Turbo is a free, non-commercial hobby project. Whether you install an add-on, and
+>   whether doing so is appropriate where you live, is your decision and your responsibility.
+>
+> See [Disclaimer](#disclaimer).
+
 ---
 
 ## Why
